@@ -162,6 +162,11 @@ export interface ComponentBaseProps {
 // @public
 export const componentQrl: <PROPS extends Record<any, any>>(componentQrl: QRL<OnRenderFn<PROPS>>) => Component<PROPS>;
 
+// @public (undocumented)
+export interface ComputedSignal2<T> extends ReadonlySignal2<T> {
+    force(): void;
+}
+
 // @internal (undocumented)
 export const _CONST_PROPS: unique symbol;
 
@@ -197,8 +202,20 @@ export interface CorrectedToggleEvent extends Event {
     readonly prevState: 'open' | 'closed';
 }
 
+// @public (undocumented)
+export const createComputed2$: <T>(first: () => T) => ComputedSignal2<T>;
+
+// @public (undocumented)
+export const createComputed2Qrl: <T>(qrl: QRL<() => T>) => ComputedSignal2<T>;
+
 // @public
 export const createContextId: <STATE = unknown>(name: string) => ContextId<STATE>;
+
+// @public (undocumented)
+export const createSignal2: {
+    <T>(): Signal2<T | undefined>;
+    <T>(value: T): Signal2<T>;
+};
 
 // @public (undocumented)
 export interface CSSProperties extends CSS_2.Properties<string | number>, CSS_2.PropertiesHyphen<string | number> {
@@ -212,6 +229,9 @@ export interface DataHTMLAttributes<T extends Element> extends Attrs<'data', T> 
 // @public (undocumented)
 export interface DelHTMLAttributes<T extends Element> extends Attrs<'del', T> {
 }
+
+// @internal
+export function _deserialize(rawStateData: string | null, element?: unknown): unknown[];
 
 // @internal (undocumented)
 export const _deserializeData: (data: string, element?: unknown) => any;
@@ -340,6 +360,9 @@ string | undefined,
 export interface EmbedHTMLAttributes<T extends Element> extends Attrs<'embed', T> {
 }
 
+// @internal (undocumented)
+export const _EMPTY_ARRAY: any[];
+
 // @public (undocumented)
 export interface ErrorBoundaryStore {
     // (undocumented)
@@ -347,7 +370,7 @@ export interface ErrorBoundaryStore {
 }
 
 // @public (undocumented)
-export const event$: <T>(first: T) => QRL<T>;
+export const event$: <T>(qrl: T) => QRL<T>;
 
 // @public
 export type EventHandler<EV = Event, EL = Element> = {
@@ -457,7 +480,7 @@ export interface ImgHTMLAttributes<T extends Element> extends Attrs<'img', T> {
 }
 
 // @public
-export const implicit$FirstArg: <FIRST, REST extends any[], RET>(fn: (first: QRL<FIRST>, ...rest: REST) => RET) => (first: FIRST, ...rest: REST) => RET;
+export const implicit$FirstArg: <FIRST, REST extends any[], RET>(fn: (qrl: QRL<FIRST>, ...rest: REST) => RET) => ((qrl: FIRST, ...rest: REST) => RET);
 
 // Warning: (ae-internal-missing-underscore) The name "inlinedQrl" should be prefixed with an underscore because the declaration is marked as @internal
 //
@@ -507,10 +530,8 @@ export type IntrinsicSVGElements = {
 // @internal (undocumented)
 export const _isJSXNode: <T>(n: unknown) => n is JSXNode<T>;
 
-// Warning: (ae-forgotten-export) The symbol "Signal2_2" needs to be exported by the entry point index.d.ts
-//
 // @public (undocumented)
-export const isSignal: (value: any) => value is Signal2_2<unknown>;
+export const isSignal: (value: any) => value is Signal2<unknown>;
 
 // @internal (undocumented)
 export function _isStringifiable(value: unknown): value is _Stringifiable;
@@ -916,6 +937,14 @@ export type QwikWheelEvent<T = Element> = NativeWheelEvent;
 // @public (undocumented)
 export type ReadonlySignal<T = unknown> = Readonly<Signal<T>>;
 
+// @public (undocumented)
+export interface ReadonlySignal2<T> {
+    // (undocumented)
+    readonly untrackedValue: T;
+    // (undocumented)
+    readonly value: T;
+}
+
 // @internal (undocumented)
 export const _regSymbol: (symbol: any, hash: string) => any;
 
@@ -1036,6 +1065,9 @@ export interface ScriptHTMLAttributes<T extends Element> extends Attrs<'script',
 export interface SelectHTMLAttributes<T extends Element> extends Attrs<'select', T> {
 }
 
+// @internal
+export function _serialize(data: unknown[]): Promise<string>;
+
 // @internal (undocumented)
 export const _serializeData: (data: any, pureQRL?: boolean) => Promise<string>;
 
@@ -1095,8 +1127,16 @@ export abstract class _SharedContainer implements Container2 {
     trackSignalValue<T>(signal: Signal, subscriber: Effect, property: string): T;
 }
 
-// @public (undocumented)
+// @public
 export interface Signal<T = any> {
+    // (undocumented)
+    value: T;
+}
+
+// @public (undocumented)
+export interface Signal2<T> extends ReadonlySignal2<T> {
+    // (undocumented)
+    untrackedValue: T;
     // (undocumented)
     value: T;
 }
@@ -1848,6 +1888,9 @@ export const useComputed$: Computed;
 // @public (undocumented)
 export const useComputedQrl: ComputedQRL;
 
+// @public @deprecated
+export const useConstant: <T>(value: (() => T) | T) => T;
+
 // Warning: (ae-forgotten-export) The symbol "UseContext" needs to be exported by the entry point index.d.ts
 //
 // @public
@@ -1893,12 +1936,12 @@ export function useServerData<T, B = T>(key: string, defaultValue: B): T | B;
 // @public (undocumented)
 export interface UseSignal {
     // (undocumented)
-    <T>(): Signal<T | undefined>;
+    <T>(): Signal2<T | undefined>;
     // (undocumented)
-    <T>(value: T | (() => T)): Signal<T>;
+    <T>(value: T | (() => T)): Signal2<T>;
 }
 
-// @public (undocumented)
+// @public
 export const useSignal: UseSignal;
 
 // @public
@@ -1913,13 +1956,13 @@ export interface UseStoreOptions {
 // Warning: (ae-forgotten-export) The symbol "UseStyles" needs to be exported by the entry point index.d.ts
 //
 // @public
-export const useStyles$: (first: string) => UseStyles;
+export const useStyles$: (qrl: string) => UseStyles;
 
 // @public
 export const useStylesQrl: (styles: QRL<string>) => UseStyles;
 
 // @public
-export const useStylesScoped$: (first: string) => UseStylesScoped;
+export const useStylesScoped$: (qrl: string) => UseStylesScoped;
 
 // @public (undocumented)
 export interface UseStylesScoped {
@@ -1931,7 +1974,7 @@ export interface UseStylesScoped {
 export const useStylesScopedQrl: (styles: QRL<string>) => UseStylesScoped;
 
 // @public
-export const useTask$: (first: TaskFn, opts?: UseTaskOptions | undefined) => void;
+export const useTask$: (qrl: TaskFn, opts?: UseTaskOptions | undefined) => void;
 
 // @public (undocumented)
 export interface UseTaskOptions {
@@ -1942,7 +1985,7 @@ export interface UseTaskOptions {
 export const useTaskQrl: (qrl: QRL<TaskFn>, opts?: UseTaskOptions) => void;
 
 // @public
-export const useVisibleTask$: (first: TaskFn, opts?: OnVisibleTaskOptions | undefined) => void;
+export const useVisibleTask$: (qrl: TaskFn, opts?: OnVisibleTaskOptions | undefined) => void;
 
 // @public
 export const useVisibleTaskQrl: (qrl: QRL<TaskFn>, opts?: OnVisibleTaskOptions) => void;
@@ -2077,7 +2120,7 @@ export interface WebViewHTMLAttributes<T extends Element> extends HTMLAttributes
 export function withLocale<T>(locale: string, fn: () => T): T;
 
 // @internal (undocumented)
-export const _wrapProp: <T extends Record<any, any>, P extends keyof T>(obj: T, prop: P) => any;
+export const _wrapProp: <T extends Record<any, any>, P extends keyof T>(obj: T, prop?: P | undefined) => any;
 
 // (No @packageDocumentation comment for this package)
 

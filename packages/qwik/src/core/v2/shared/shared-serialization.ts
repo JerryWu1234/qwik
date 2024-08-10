@@ -1,10 +1,10 @@
-import type { FunctionComponent } from '@builder.io/qwik';
 import { isDev } from '../../../build/index.dev';
 import type { StreamWriter } from '../../../server/types';
 import { componentQrl, isQwikComponent } from '../../component/component.public';
 import type { ObjToProxyMap } from '../../container/container';
 import { SERIALIZABLE_STATE } from '../../container/serializers';
 import { assertDefined, assertTrue } from '../../error/assert';
+import { getPlatform } from '../../platform/platform';
 import {
   createQRL,
   isQrl,
@@ -21,20 +21,18 @@ import {
   isPropsProxy,
 } from '../../render/jsx/jsx-runtime';
 import { Slot } from '../../render/jsx/slot.public';
-import {
-  fastSkipSerialize,
-  getProxyFlags,
-  getSubscriptionManager
-} from '../../state/common';
+import { type FunctionComponent } from '../../render/jsx/types/jsx-node';
+import { fastSkipSerialize } from '../../state/common';
 import { _CONST_PROPS, _VAR_PROPS } from '../../state/constants';
 import { Task, isTask, type ResourceReturnInternal } from '../../use/use-task';
+import { isElement, isNode } from '../../util/element';
 import { EMPTY_OBJ } from '../../util/flyweight';
 import { throwErrorAndStop } from '../../util/log';
 import { ELEMENT_ID } from '../../util/markers';
 import { isPromise } from '../../util/promises';
-import type { ValueOrPromise } from '../../util/types';
-import type { DomContainer } from '../client/dom-container';
-import { vnode_isVNode, vnode_locate } from '../client/vnode';
+import { isSerializableObject, type ValueOrPromise } from '../../util/types';
+import { type DomContainer } from '../client/dom-container';
+import { vnode_getNode, vnode_isVNode, vnode_locate } from '../client/vnode';
 import {
   ComputedSignal2,
   DerivedSignal2,
@@ -42,15 +40,22 @@ import {
   Signal2,
   type EffectSubscriptions,
 } from '../signal/v2-signal';
-import { Store2, createStore2, getStoreHandler2, unwrapStore2, type StoreHandler } from '../signal/v2-store';
+import {
+  Store2,
+  createStore2,
+  getStoreHandler2,
+  getStoreTarget2,
+  unwrapStore2,
+  type StoreHandler,
+} from '../signal/v2-store';
 import type { SymbolToChunkResolver } from '../ssr/ssr-types';
-import type { fixMeAny } from './types';
+import type { DeserializeContainer, fixMeAny } from './types';
 
 const deserializedProxyMap = new WeakMap<object, unknown>();
 
 type DeserializerProxy<T extends object = object> = T & { [SERIALIZER_PROXY_UNWRAP]: object };
 
-const unwrapDeserializerProxy = (value: unknown) => {
+export const unwrapDeserializerProxy = (value: unknown) => {
   const unwrapped =
     typeof value === 'object' &&
     value !== null &&
@@ -91,6 +96,28 @@ class DeserializationHandler implements ProxyHandler<object> {
   get(target: object, property: PropertyKey, receiver: object) {
     if (property === SERIALIZER_PROXY_UNWRAP) {
       return target;
+    }
+    if (getStoreTarget2(target) !== undefined) {
+      /**
+       * If we modify string value by for example `+=` operator, we need to get the old value first.
+       * If the target is a store proxy, we need to unwrap it and get the real object. This is
+       * because if we try to get the value, we will get deserialized value which is not what we
+       * want in case of string.
+       *
+       * For strings we always assume that they are not deserialized (cached), so we need to get the
+       * real value. The reason is that if we have a string which starts with a serialization
+       * constant character, we need to have the SerializationConstant.String_CHAR prefix character.
+       * Otherwise the system will try to deserialize the value again.
+       */
+      const unwrapped = unwrapDeserializerProxy(unwrapStore2(target)) as object;
+      const unwrappedPropValue = Reflect.get(unwrapped, property, receiver);
+      if (
+        typeof unwrappedPropValue === 'string' &&
+        unwrappedPropValue.length >= 1 &&
+        unwrappedPropValue.charCodeAt(0) === SerializationConstant.String_VALUE
+      ) {
+        return allocate(unwrappedPropValue);
+      }
     }
     let propValue = Reflect.get(target, property, receiver);
     let typeCode: number;
@@ -144,6 +171,24 @@ class DeserializationHandler implements ProxyHandler<object> {
     }
     propValue = wrapDeserializerProxy(this.$container$, propValue);
     return propValue;
+  }
+
+  set(target: object, property: string | symbol, newValue: any, receiver: any): boolean {
+    /**
+     * If we are setting a value which is a string and starts with a special character, we need to
+     * prefix it with a SerializationConstant character to indicate that it is a string.
+     *
+     * Without this later (when getting the value) we would try to deserialize the value incorrectly
+     * due to the special character at the start.
+     */
+    if (
+      typeof newValue === 'string' &&
+      newValue.length >= 1 &&
+      newValue.charCodeAt(0) < SerializationConstant.LAST_VALUE
+    ) {
+      return Reflect.set(target, property, SerializationConstant.String_CHAR + newValue, receiver);
+    }
+    return Reflect.set(target, property, newValue, receiver);
   }
 
   has(target: object, property: PropertyKey) {
@@ -240,7 +285,7 @@ const restString = () => {
   return rest.substring(start, restIdx - 1);
 };
 
-const inflate = (container: DomContainer, target: any, needsInflationData: string) => {
+const inflate = (container: DeserializeContainer, target: any, needsInflationData: string) => {
   restStack.push(rest, restIdx);
   rest = needsInflationData;
   restIdx = 1;
@@ -266,7 +311,7 @@ const inflate = (container: DomContainer, target: any, needsInflationData: strin
       break;
     case SerializationConstant.Store_VALUE:
       const storeHandler = getStoreHandler2(target)!;
-      storeHandler.$container$ = container;
+      storeHandler.$container$ = container as DomContainer;
       storeHandler.$target$ = container.$getObjectById$(restInt());
       storeHandler.$flags$ = restInt();
       const effectProps = rest.substring(restIdx).split('|');
@@ -277,7 +322,7 @@ const inflate = (container: DomContainer, target: any, needsInflationData: strin
           const idx = effect.indexOf(';');
           const prop = effect.substring(0, idx);
           const effectStr = effect.substring(idx + 1);
-          deserializeSignal2Effect(0, effectStr.split(';'), container, effects[prop] = [])
+          deserializeSignal2Effect(0, effectStr.split(';'), container, (effects[prop] = []));
         }
       }
       break;
@@ -460,12 +505,14 @@ export function parseQRL(qrl: string): QRLInternal<any> {
   return createQRL(chunk, symbol, qrlRef, null, captureIds, null, null);
 }
 
-export function inflateQRL(container: DomContainer, qrl: QRLInternal<any>) {
+export function inflateQRL(container: DeserializeContainer, qrl: QRLInternal<any>) {
   const captureIds = qrl.$capture$;
   qrl.$captureRef$ = captureIds
     ? captureIds.map((id) => container.$getObjectById$(parseInt(id)))
     : null;
-  qrl.$setContainer$(container.element);
+  if (container.element) {
+    qrl.$setContainer$(container.element);
+  }
   return qrl;
 }
 
@@ -826,14 +873,18 @@ function serialize(serializationContext: SerializationContext): void {
       const varId = $addRoot$(varProps);
       const constProps = value[_CONST_PROPS];
       const constId = $addRoot$(constProps);
-      writeString(SerializationConstant.PropsProxy_CHAR + varId + '|' + constId);
+      writeString(SerializationConstant.PropsProxy_CHAR + varId + ' ' + constId);
     } else if ((storeHandler = getStoreHandler2(value))) {
-      let store = SerializationConstant.Store_CHAR + $addRoot$(storeHandler.$target$) + ' ' + storeHandler.$flags$;
+      let store =
+        SerializationConstant.Store_CHAR +
+        $addRoot$(storeHandler.$target$) +
+        ' ' +
+        storeHandler.$flags$;
       const effects = storeHandler.$effects$;
       if (effects) {
         let sep = ' ';
         for (const propName in effects) {
-          store += sep + propName + serializeEffectSubs($addRoot$, effects[propName])
+          store += sep + propName + serializeEffectSubs($addRoot$, effects[propName]);
           sep = '|';
         }
       }
@@ -842,14 +893,7 @@ function serialize(serializationContext: SerializationContext): void {
       if (isResource(value)) {
         serializationContext.$resources$.add(value);
       }
-      serializeObjectLiteral(
-        value,
-        $writer$,
-        writeValue,
-        writeString,
-        serializationContext.$proxyMap$,
-        $addRoot$
-      );
+      serializeObjectLiteral(value, $writer$, writeValue, writeString);
     } else if (value instanceof Signal2) {
       if (value instanceof DerivedSignal2) {
         writeString(
@@ -954,35 +998,15 @@ function serialize(serializationContext: SerializationContext): void {
     value: any,
     $writer$: StreamWriter,
     writeValue: (value: any, idx: number) => void,
-    writeString: (text: string) => void,
-    objectMap: ObjToProxyMap,
-    $addRoot$: (obj: unknown) => number
+    writeString: (text: string) => void
   ) => {
     if (Array.isArray(value)) {
-      const proxy = objectMap.get(value);
-      if (proxy !== undefined) {
-        $writer$.write('{');
-        serializeProxy(value, proxy, $writer$, writeString, $addRoot$);
-        $writer$.write(',');
-        // for an array we have to add property key (undefined)
-        writeString(SerializationConstant.UNDEFINED_CHAR);
-        $writer$.write(':');
-      }
-
       // Serialize as array.
       serializeArray(value, $writer$, writeValue);
-
-      if (proxy !== undefined) {
-        $writer$.write('}');
-      }
     } else {
       // Serialize as object.
       $writer$.write('{');
-      const proxy = objectMap.get(value);
-      if (proxy !== undefined) {
-        serializeProxy(value, proxy, $writer$, writeString, $addRoot$);
-      }
-      serializeObjectProperties(value, $writer$, writeValue, writeString, proxy !== undefined);
+      serializeObjectProperties(value, $writer$, writeValue, writeString);
       $writer$.write('}');
     }
   };
@@ -1009,22 +1033,6 @@ function serializeEffectSubs(
   return data;
 }
 
-const subscriptionManagerToString: any = null!;
-
-function serializeProxy(
-  value: any,
-  proxy: any,
-  $writer$: StreamWriter,
-  writeString: (text: string) => void,
-  $addRoot$: (obj: unknown) => number
-) {
-  const flags = getProxyFlags(value) || 0;
-  writeString(SerializationConstant.Store_CHAR);
-  $writer$.write(':');
-  const manager = getSubscriptionManager(proxy)!;
-  writeString(String(flags) + subscriptionManagerToString(manager, $addRoot$));
-}
-
 function serializeArray(
   value: any,
   $writer$: StreamWriter,
@@ -1044,10 +1052,9 @@ function serializeObjectProperties(
   value: any,
   $writer$: StreamWriter,
   writeValue: (value: any, idx: number) => void,
-  writeString: (text: string) => void,
-  startWithDelimiter: boolean
+  writeString: (text: string) => void
 ) {
-  let delimiter = startWithDelimiter;
+  let delimiter = false;
   for (const key in value) {
     if (Object.prototype.hasOwnProperty.call(value, key) && !fastSkipSerialize(value[key])) {
       delimiter && $writer$.write(',');
@@ -1079,12 +1086,12 @@ function serializeDerivedFn(
 
 function deserializeSignal2(
   signal: Signal2,
-  container: DomContainer,
+  container: DeserializeContainer,
   data: string,
   readFn: boolean,
   readQrl: boolean
 ) {
-  signal.$container$ = container;
+  signal.$container$ = container as DomContainer;
   const parts = data.substring(1).split(';');
   let idx = 0;
   if (readFn) {
@@ -1100,16 +1107,25 @@ function deserializeSignal2(
   }
   if (readQrl) {
     const computedSignal = signal as ComputedSignal2<any>;
-    computedSignal.$computeQrl$ = parseQRL(parts[idx++]) as fixMeAny;
+    computedSignal.$computeQrl$ = inflateQRL(container, parseQRL(parts[idx++])) as fixMeAny;
   }
-  signal.$untrackedValue$ = container.$getObjectById$(parts[idx++]);
+  let signalValue = container.$getObjectById$(parts[idx++]);
+  if (vnode_isVNode(signalValue)) {
+    signalValue = vnode_getNode(signalValue);
+  }
+  signal.$untrackedValue$ = signalValue;
   if (idx < parts.length) {
     const effects = signal.$effects$ || (signal.$effects$ = []);
     idx = deserializeSignal2Effect(idx, parts, container, effects);
   }
 }
 
-function deserializeSignal2Effect(idx: number, parts: string[], container: DomContainer, effects: EffectSubscriptions[]) {
+function deserializeSignal2Effect(
+  idx: number,
+  parts: string[],
+  container: DeserializeContainer,
+  effects: EffectSubscriptions[]
+) {
   while (idx < parts.length) {
     // idx == 1 is the attribute name
     const effect = parts[idx++]
@@ -1136,6 +1152,19 @@ export function qrlToString(
 ) {
   let symbol = value.$symbol$;
   let chunk = value.$chunk$;
+
+  const refSymbol = value.$refSymbol$ ?? symbol;
+  const platform = getPlatform();
+  if (platform) {
+    const result = platform.chunkForSymbol(refSymbol, chunk);
+    if (result) {
+      chunk = result[1];
+      if (!value.$refSymbol$) {
+        symbol = result[0];
+      }
+    }
+  }
+
   const isSync = isSyncQrl(value);
   if (!isSync) {
     // If we have a symbol we need to resolve the chunk.
@@ -1176,6 +1205,140 @@ export function qrlToString(
   }
 
   return qrlStringInline;
+}
+
+/**
+ * Serialize data to string using SerializationContext.
+ *
+ * @param data - Data to serialize
+ * @internal
+ */
+export async function _serialize(data: unknown[]): Promise<string> {
+  const serializationContext = createSerializationContext(
+    null,
+    new WeakMap(),
+    () => '',
+    () => {}
+  );
+
+  for (const root of data) {
+    serializationContext.$addRoot$(root);
+  }
+  await serializationContext.$breakCircularDepsAndAwaitPromises$();
+  serializationContext.$serialize$();
+  return serializationContext.$writer$.toString();
+}
+
+/**
+ * Deserialize data from string to an array of objects.
+ *
+ * @param rawStateData - Data to deserialize
+ * @param element - Container element
+ * @internal
+ */
+export function _deserialize(rawStateData: string | null, element?: unknown): unknown[] {
+  if (rawStateData == null) {
+    return [];
+  }
+  const stateData = JSON.parse(rawStateData);
+  if (!Array.isArray(stateData)) {
+    return [];
+  }
+
+  let container: DeserializeContainer | undefined = undefined;
+  if (isNode(element) && isElement(element)) {
+    container = createDeserializeContainer(stateData, element as HTMLElement);
+  } else {
+    container = createDeserializeContainer(stateData);
+  }
+  for (let i = 0; i < stateData.length; i++) {
+    const data = stateData[i];
+    stateData[i] = deserializeData(stateData, data, container);
+  }
+  return stateData;
+}
+
+function deserializeData(
+  stateData: unknown[],
+  serializedData: unknown,
+  container: DeserializeContainer
+) {
+  let typeCode: number;
+  if (
+    typeof serializedData === 'string' &&
+    serializedData.length >= 1 &&
+    (typeCode = serializedData.charCodeAt(0)) < SerializationConstant.LAST_VALUE
+  ) {
+    let propValue = serializedData;
+    propValue = allocate(propValue);
+
+    if (typeCode >= SerializationConstant.Error_VALUE) {
+      inflate(container, propValue, serializedData);
+    }
+    return propValue;
+  } else if (serializedData && typeof serializedData === 'object') {
+    if (Array.isArray(serializedData)) {
+      return deserializeArray(stateData, serializedData, container);
+    } else {
+      return deserializeObject(stateData, serializedData, container);
+    }
+  }
+  return serializedData;
+}
+
+function deserializeObject(
+  stateData: unknown[],
+  serializedData: object,
+  container: DeserializeContainer
+) {
+  if (!isSerializableObject(serializedData)) {
+    return serializedData;
+  }
+  for (const key in serializedData) {
+    if (Object.prototype.hasOwnProperty.call(serializedData, key)) {
+      const value = serializedData[key];
+      serializedData[key] = deserializeData(stateData, value, container);
+    }
+  }
+  return serializedData;
+}
+
+function deserializeArray(
+  stateData: unknown[],
+  serializedData: Array<unknown>,
+  container: DeserializeContainer
+) {
+  for (let i = 0; i < serializedData.length; i++) {
+    const value = serializedData[i];
+    serializedData[i] = deserializeData(stateData, value, container);
+  }
+  return serializedData;
+}
+
+function getObjectById(id: number | string, stateData: unknown[]): unknown {
+  if (typeof id === 'string') {
+    id = parseFloat(id);
+  }
+  assertTrue(id < stateData.length, 'Invalid reference');
+  return stateData[id];
+}
+
+function createDeserializeContainer(
+  stateData: unknown[],
+  element?: HTMLElement
+): DeserializeContainer {
+  const container: DeserializeContainer = {
+    $getObjectById$: (id: number | string) => getObjectById(id, stateData),
+    getSyncFn: (_: number) => {
+      const fn = () => {};
+      return fn;
+    },
+    element: null,
+  };
+  if (element) {
+    container.element = element;
+  }
+  return container;
 }
 
 /**
@@ -1259,6 +1422,12 @@ export const canSerialize2 = (value: any): boolean => {
       }
       return true;
     } else if (isTask(value)) {
+      return true;
+    } else if (value instanceof Error) {
+      return true;
+    } else if (isPromise(value)) {
+      return true;
+    } else if (isJSXNode(value)) {
       return true;
     }
   } else if (typeof value === 'function') {
@@ -1352,7 +1521,10 @@ function serializeJSXType($addRoot$: (obj: unknown) => number, type: string | Fu
   }
 }
 
-function deserializeJSXType(container: DomContainer, type: string): string | FunctionComponent {
+function deserializeJSXType(
+  container: DeserializeContainer,
+  type: string
+): string | FunctionComponent {
   if (type === ':slot') {
     return Slot;
   } else if (type === ':fragment') {

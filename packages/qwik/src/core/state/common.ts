@@ -10,6 +10,7 @@ import { trackSignal } from '../use/use-core';
 import {
   TaskFlags,
   isComputedTask,
+  isResourceTask,
   isSubscriberDescriptor,
   isTask,
   type SubscriberEffect,
@@ -289,8 +290,9 @@ export const serializeSubscription = (sub: Subscriptions, getObjId: GetObjID) =>
     }
     if (type <= SubscriptionType.PROP_MUTABLE) {
       key = sub[SubscriptionProp.ELEMENT_PROP];
-      base += ` ${signalID} ${must(getObjId(sub[SubscriptionProp.ELEMENT]))} ${sub[SubscriptionProp.ELEMENT_PROP]
-        }`;
+      base += ` ${signalID} ${must(getObjId(sub[SubscriptionProp.ELEMENT]))} ${
+        sub[SubscriptionProp.ELEMENT_PROP]
+      }`;
     } else if (type <= SubscriptionType.TEXT_MUTABLE) {
       key =
         sub.length > SubscriptionProp.ELEMENT_PROP ? sub[SubscriptionProp.ELEMENT_PROP] : undefined;
@@ -492,7 +494,9 @@ export class LocalSubscriptionManager {
         if (type == SubscriptionType.HOST) {
           if (isTask(host)) {
             if (isComputedTask(host)) {
-              scheduler(ChoreType.COMPUTED, host);
+              // scheduler(ChoreType.COMPUTED, host);
+            } else if (isResourceTask(host)) {
+              scheduler(ChoreType.RESOURCE, host);
             } else {
               const task = host as Task;
               scheduler(

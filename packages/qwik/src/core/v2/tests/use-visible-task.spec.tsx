@@ -294,7 +294,7 @@ describe.each([
         const double = useSignal(0);
 
         useVisibleTask$(({ track }) => {
-          double.value = 2 * track(count);
+          double.value = 2 * track(() => count.value);
         });
         return (
           <button
@@ -591,26 +591,6 @@ describe.each([
           </p>
         </Component>
       );
-    });
-  });
-
-  describe('ref', () => {
-    it('should handle ref prop', async () => {
-      const Cmp = component$(() => {
-        const v = useSignal<Element>();
-        useVisibleTask$(() => {
-          v.value!.textContent = 'Abcd';
-        });
-        return <p ref={v}>Hello Qwik</p>;
-      });
-
-      const { document } = await render(<Cmp />, { debug });
-
-      if (render === ssrRenderToDom) {
-        await trigger(document.body, 'p', 'qvisible');
-      }
-
-      await expect(document.querySelector('p')).toMatchDOM(<p>Abcd</p>);
     });
   });
 

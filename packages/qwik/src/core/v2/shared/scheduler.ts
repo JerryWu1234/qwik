@@ -88,22 +88,26 @@ import {
   Task,
   TaskFlags,
   cleanupTask,
-  runComputed2,
-  runSubscriber2,
+  runTask2,
+  runResource,
+  type ResourceDescriptor,
   type TaskFn,
 } from '../../use/use-task';
+import { logWarn } from '../../util/log';
 import { isPromise, maybeThen, maybeThenPassError, safeCall } from '../../util/promises';
 import type { ValueOrPromise } from '../../util/types';
+import { isDomContainer } from '../client/dom-container';
 import type { VirtualVNode } from '../client/types';
 import { vnode_documentPosition, vnode_isVNode, vnode_setAttr } from '../client/vnode';
 import { vnode_diff } from '../client/vnode-diff';
 import { executeComponent2 } from './component-execution';
 import type { Container2, HostElement, fixMeAny } from './types';
-import { EffectSubscriptionsProp, isSignal2, type EffectSubscriptions } from '../signal/v2-signal';
+import { isSignal2 } from '../signal/v2-signal';
 import { serializeAttribute } from '../../render/execute-component';
+import { type DomContainer } from '../client/dom-container';
 
 // Turn this on to get debug output of what the scheduler is doing.
-const DEBUG: boolean = true;
+const DEBUG: boolean = false;
 
 export const enum ChoreType {
   /// MASKS defining three levels of sorting
@@ -112,9 +116,7 @@ export const enum ChoreType {
   MICRO /* ***************** */ = 0b000_1111,
 
   /** Ensure tha the QRL promise is resolved before processing next chores in the queue */
-  QRL_RESOLVE /* *********** */ = 0b000_0000,
-  // TODO(mhevery): COMPUTED should be deleted because it is handled synchronously.
-  COMPUTED /* ************** */ = 0b000_0001,
+  QRL_RESOLVE /* *********** */ = 0b000_0001,
   RESOURCE /* ************** */ = 0b000_0010,
   TASK /* ****************** */ = 0b000_0011,
   NODE_DIFF /* ************* */ = 0b000_0100,
@@ -159,8 +161,7 @@ export const createScheduler = (
   function schedule(
     type: ChoreType.QRL_RESOLVE,
     ignore0: null,
-    ignore1: null,
-    promise: Promise<any>
+    ignore1: QRLInternal<any>
   ): ValueOrPromise<void>;
   function schedule(type: ChoreType.JOURNAL_FLUSH): ValueOrPromise<void>;
   function schedule(type: ChoreType.WAIT_FOR_ALL): ValueOrPromise<void>;
@@ -174,7 +175,10 @@ export const createScheduler = (
    * @param props- Props to pass to the component.
    * @param waitForChore? = false
    */
-  function schedule(type: ChoreType.TASK | ChoreType.VISIBLE, task: Task): ValueOrPromise<void>;
+  function schedule(
+    type: ChoreType.TASK | ChoreType.VISIBLE | ChoreType.RESOURCE,
+    task: Task
+  ): ValueOrPromise<void>;
   function schedule(
     type: ChoreType.COMPONENT,
     host: HostElement,
@@ -187,7 +191,6 @@ export const createScheduler = (
     qrl: QRL<(...args: any[]) => any>,
     props: any
   ): ValueOrPromise<JSXOutput>;
-  function schedule(type: ChoreType.COMPUTED, task: Task): ValueOrPromise<void>;
   function schedule(
     type: ChoreType.NODE_DIFF,
     host: HostElement,
@@ -215,7 +218,7 @@ export const createScheduler = (
     const isTask =
       type === ChoreType.TASK ||
       type === ChoreType.VISIBLE ||
-      type === ChoreType.COMPUTED ||
+      type === ChoreType.RESOURCE ||
       type === ChoreType.CLEANUP_VISIBLE;
     if (isTask) {
       (hostOrTask as Task).$flags$ |= TaskFlags.DIRTY;
@@ -236,7 +239,7 @@ export const createScheduler = (
     };
     chore.$promise$ = new Promise((resolve) => (chore.$resolve$ = resolve));
     DEBUG && debugTrace('schedule', chore, currentChore, choreQueue);
-    chore = sortedInsert(choreQueue, chore, choreComparator, choreUpdate);
+    chore = sortedInsert(choreQueue, chore);
     if (!journalFlushScheduled && runLater) {
       // If we are not currently draining, we need to schedule a drain.
       journalFlushScheduled = true;
@@ -262,7 +265,10 @@ export const createScheduler = (
     }
     while (choreQueue.length) {
       const nextChore = choreQueue.shift()!;
-      const comp = choreComparator(nextChore, runUptoChore);
+      const comp = choreComparator(nextChore, runUptoChore, false);
+      if (comp === null) {
+        continue;
+      }
       if (comp > 0) {
         // we have processed all of the chores up to the given chore.
         break;
@@ -305,21 +311,19 @@ export const createScheduler = (
           (err: any) => container.handleError(err, host)
         );
         break;
-      case ChoreType.COMPUTED:
-        returnValue = runComputed2(chore.$payload$ as Task<TaskFn, TaskFn>, container, host);
+      case ChoreType.RESOURCE:
+        // Don't await the return value of the resource, because async resources should not be awaited.
+        // The reason for this is that we should be able to update for example a node with loading
+        // text. If we await the resource, the loading text will not be displayed until the resource
+        // is loaded.
+        const result = runResource(chore.$payload$ as ResourceDescriptor<TaskFn>, container, host);
+        returnValue = isDomContainer(container) ? null : result;
         break;
       case ChoreType.TASK:
-        const payload = chore.$payload$;
-        if (Array.isArray(payload)) {
-          // This is a hack to see if the scheduling will work.
-          const effectSubscriber = payload as fixMeAny as EffectSubscriptions;
-          const effect = effectSubscriber[EffectSubscriptionsProp.EFFECT];
-          returnValue = runSubscriber2(effect as Task<TaskFn, TaskFn>, container, host);
-          break;
-        }
-      // eslint-disable-next-line no-fallthrough
+        returnValue = runTask2(chore.$payload$ as Task<TaskFn, TaskFn>, container, host);
+        break;
       case ChoreType.VISIBLE:
-        returnValue = runSubscriber2(chore.$payload$ as Task<TaskFn, TaskFn>, container, host);
+        returnValue = runTask2(chore.$payload$ as Task<TaskFn, TaskFn>, container, host);
         break;
       case ChoreType.CLEANUP_VISIBLE:
         const task = chore.$payload$ as Task<TaskFn, TaskFn>;
@@ -331,7 +335,7 @@ export const createScheduler = (
         if (isSignal2(jsx)) {
           jsx = jsx.value as any;
         }
-        returnValue = vnode_diff(container as fixMeAny, jsx, parentVirtualNode, null);
+        returnValue = vnode_diff(container as DomContainer, jsx, parentVirtualNode, null);
         break;
       case ChoreType.NODE_PROP:
         const virtualNode = chore.$host$ as VirtualVNode;
@@ -339,12 +343,16 @@ export const createScheduler = (
         if (isSignal2(value)) {
           value = value.value as any;
         }
-        // TODO(mhevery): Fix this hack
-        const journal = (container as fixMeAny).$journal$ as fixMeAny;
+        const journal = (container as DomContainer).$journal$;
         const property = chore.$idx$ as string;
         value = serializeAttribute(property, value);
         vnode_setAttr(journal, virtualNode, property, value);
         break;
+      case ChoreType.QRL_RESOLVE: {
+        const target = chore.$target$ as QRLInternal<any>;
+        returnValue = target.resolve();
+        break;
+      }
     }
     return maybeThenPassError(returnValue, (value) => {
       DEBUG && debugTrace('execute.DONE', null, currentChore, choreQueue);
@@ -352,25 +360,6 @@ export const createScheduler = (
       currentChore = null;
       return (chore.$returnValue$ = value);
     });
-  }
-};
-
-export const hostElementPredicate = (aHost: HostElement, bHost: HostElement): number => {
-  if (aHost === bHost) {
-    return 0;
-  } else {
-    if (vnode_isVNode(aHost) && vnode_isVNode(bHost)) {
-      // we are running on the client.
-      return vnode_documentPosition(aHost, bHost);
-    } else {
-      // we are running on the server.
-      // On server we can't schedule task for a different host!
-      // Server is SSR, and therefore scheduling for anything but the current host
-      // implies that things need to be re-run nad that is not supported because of streaming.
-      throw new Error(
-        'SERVER: during HTML streaming, it is not possible to cause a re-run of tasks on a different host'
-      );
-    }
   }
 };
 
@@ -389,7 +378,9 @@ const choreUpdate = (existing: Chore, newChore: Chore): void => {
   }
 };
 
-export const choreComparator = (a: Chore, b: Chore): number => {
+function choreComparator(a: Chore, b: Chore, shouldThrowOnHostMismatch: true): number;
+function choreComparator(a: Chore, b: Chore, shouldThrowOnHostMismatch: false): number | null;
+function choreComparator(a: Chore, b: Chore, shouldThrowOnHostMismatch: boolean): number | null {
   const macroTypeDiff = (a.$type$ & ChoreType.MACRO) - (b.$type$ & ChoreType.MACRO);
   if (macroTypeDiff !== 0) {
     return macroTypeDiff;
@@ -411,9 +402,13 @@ export const choreComparator = (a: Chore, b: Chore): number => {
         // On server we can't schedule task for a different host!
         // Server is SSR, and therefore scheduling for anything but the current host
         // implies that things need to be re-run nad that is not supported because of streaming.
-        throw new Error(
-          'SERVER: during HTML streaming, it is not possible to cause a re-run of tasks on a different host'
-        );
+        const errorMessage =
+          'SERVER: during HTML streaming, it is not possible to cause a re-run of tasks on a different host';
+        if (shouldThrowOnHostMismatch) {
+          throw new Error(errorMessage);
+        }
+        logWarn(errorMessage);
+        return null;
       }
     }
 
@@ -429,7 +424,7 @@ export const choreComparator = (a: Chore, b: Chore): number => {
   }
 
   return 0;
-};
+}
 
 export const intraHostPredicate = (a: Chore, b: Chore): number => {
   const idxDiff = toNumber(a.$idx$) - toNumber(b.$idx$);
@@ -451,11 +446,7 @@ export const intraHostPredicate = (a: Chore, b: Chore): number => {
   return 0;
 };
 
-function sortedFindIndex<T>(
-  sortedArray: T[],
-  value: T,
-  comparator: (a: T, b: T) => number
-): number {
+function sortedFindIndex(sortedArray: Chore[], value: Chore): number {
   /// We need to ensure that the `queue` is sorted by priority.
   /// 1. Find a place where to insert into.
   let bottom = 0;
@@ -463,7 +454,7 @@ function sortedFindIndex<T>(
   while (bottom < top) {
     const middle = bottom + ((top - bottom) >> 1);
     const midChore = sortedArray[middle];
-    const comp = comparator(value, midChore);
+    const comp = choreComparator(value, midChore, true);
     if (comp < 0) {
       top = middle;
     } else if (comp > 0) {
@@ -476,22 +467,17 @@ function sortedFindIndex<T>(
   return ~bottom;
 }
 
-function sortedInsert<T>(
-  sortedArray: T[],
-  value: T,
-  comparator: (a: T, b: T) => number,
-  updater?: (a: T, b: T) => void
-): T {
+function sortedInsert(sortedArray: Chore[], value: Chore): Chore {
   /// We need to ensure that the `queue` is sorted by priority.
   /// 1. Find a place where to insert into.
-  const idx = sortedFindIndex(sortedArray, value, comparator);
+  const idx = sortedFindIndex(sortedArray, value);
   if (idx < 0) {
     /// 2. Insert the chore into the queue.
     sortedArray.splice(~idx, 0, value);
     return value;
   }
   const existing = sortedArray[idx];
-  updater && updater(existing, value);
+  choreUpdate(existing, value);
   return existing;
 }
 
@@ -499,7 +485,7 @@ function debugChoreToString(chore: Chore): string {
   const type =
     (
       {
-        [ChoreType.COMPUTED]: 'COMPUTED',
+        [ChoreType.QRL_RESOLVE]: 'QRL_RESOLVE',
         [ChoreType.RESOURCE]: 'RESOURCE',
         [ChoreType.TASK]: 'TASK',
         [ChoreType.NODE_DIFF]: 'NODE_DIFF',

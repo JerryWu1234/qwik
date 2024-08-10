@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { trigger } from '../../../testing/element-fixture';
-import { getTestPlatform } from '../../../testing/platform';
-import { ErrorProvider, domRender, ssrRenderToDom } from '../../../testing/rendering.unit-util';
-import '../../../testing/vdom-diff.unit-util';
-import { component$ } from '../../component/component.public';
-import { Fragment as Component, Fragment, Fragment as Signal } from '../../render/jsx/jsx-runtime';
-import { SignalDerived, type Signal as SignalType } from '../../state/signal';
-import { useSignal } from '../../use/use-signal';
-import { useStore } from '../../use/use-store.public';
-import { useTask$ } from '../../use/use-task-dollar';
+import { ErrorProvider } from '../../../testing/rendering.unit-util';
+import { domRender, ssrRenderToDom, getTestPlatform, trigger } from '@builder.io/qwik/testing';
 import { delay } from '../../util/promises';
+import {
+  useSignal,
+  useStore,
+  useTask$,
+  Fragment as Component,
+  Fragment,
+  Fragment as Signal,
+  component$,
+  type Signal as SignalType,
+} from '@builder.io/qwik';
+import { DerivedSignal2 } from '../signal/v2-signal';
 
 const debug = false; //true;
 Error.stackTraceLimit = 100;
@@ -180,7 +183,12 @@ describe.each([
     it('should rerun on track derived signal', async () => {
       const Counter = component$(() => {
         const countRaw = useStore({ count: 10 });
-        const count = new SignalDerived((o: any, prop: string) => o[prop], [countRaw, 'count']);
+        const count = new DerivedSignal2(
+          null,
+          (o: any, prop: string) => o[prop],
+          [countRaw, 'count'],
+          null
+        );
         const double = useSignal(0);
         useTask$(({ track }) => {
           double.value = 2 * track(() => count.value);
@@ -232,6 +240,63 @@ describe.each([
           </button>
         </Component>
       );
+    });
+
+    it('should unsubscribe from removed component', async () => {
+      (global as any).logs = [] as string[];
+
+      const ToggleChild = component$((props: { name: string; count: number }) => {
+        useTask$(({ track }) => {
+          const count = track(() => props.count);
+          const logText = `Child of "${props.name}" (${count})`;
+          (global as any).logs.push(logText);
+        });
+
+        return (
+          <div>
+            <h1>Toggle {props.name}</h1>
+          </div>
+        );
+      });
+
+      const Toggle = component$(() => {
+        const store = useStore({
+          count: 0,
+          cond: false,
+        });
+        return (
+          <div>
+            <button id="increment" type="button" onClick$={() => store.count++}>
+              Root increment
+            </button>
+            <div>
+              {!store.cond ? (
+                <ToggleChild name="A" count={store.count} />
+              ) : (
+                <ToggleChild name="B" count={store.count} />
+              )}
+              <button type="button" id="toggle" onClick$={() => (store.cond = !store.cond)}>
+                Toggle
+              </button>
+            </div>
+          </div>
+        );
+      });
+
+      const { document } = await render(<Toggle />, { debug });
+
+      await trigger(document.body, '#increment', 'click');
+      await trigger(document.body, '#toggle', 'click');
+      await trigger(document.body, '#increment', 'click');
+      await trigger(document.body, '#toggle', 'click');
+
+      expect((global as any).logs).toEqual([
+        'Child of "A" (0)', // init
+        'Child of "A" (1)', // increment
+        'Child of "B" (1)', // toggle
+        'Child of "B" (2)', // increment
+        'Child of "A" (2)', // toggle
+      ]);
     });
   });
   describe('queue', () => {
@@ -398,44 +463,44 @@ describe.each([
       (globalThis as any).log = undefined;
     });
     it('should handle promises and tasks', async () => {
-      const log: string[] = [];
+      (global as any).log = [] as string[];
       const MyComp = component$(() => {
-        log.push('render');
         const promise = useSignal<Promise<number>>();
+        (global as any).log.push('render');
 
         // Tasks should run one after the other, awaiting returned promises.
         // Here we "sideload" a promise via the signal
         useTask$(() => {
           promise.value = Promise.resolve(0)
             .then(() => {
-              log.push('inside.1');
+              (global as any).log.push('inside.1');
               return delay(10);
             })
             .then(() => {
-              log.push('1b');
+              (global as any).log.push('1b');
               return 1;
             });
-          log.push('1a');
+          (global as any).log.push('1a');
         });
 
         useTask$(async () => {
-          log.push('2a');
+          (global as any).log.push('2a');
           await delay(10);
-          log.push('2b');
+          (global as any).log.push('2b');
         });
 
         useTask$(() => {
           promise.value = promise.value!.then(() => {
-            log.push('3b');
+            (global as any).log.push('3b');
             return 3;
           });
-          log.push('3a');
+          (global as any).log.push('3a');
         });
 
         return <p>Should have a number: "{promise.value}"</p>;
       });
       const { vNode } = await render(<MyComp />, { debug });
-      expect(log).toEqual([
+      expect((global as any).log).toEqual([
         // 1st render
         'render',
         // task 1 returns sync and sideloads promise
@@ -470,8 +535,7 @@ describe.each([
   });
 
   describe('regression', () => {
-    // TODO(optimizer-test): problem still exists with the optimizer!
-    it.skip('#5782', async () => {
+    it('#5782', async () => {
       const Child = component$(({ sig }: { sig: SignalType<SignalType<number>> }) => {
         const counter = useSignal(0);
         useTask$(({ track }) => {

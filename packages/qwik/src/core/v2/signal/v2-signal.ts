@@ -46,6 +46,11 @@ export const createSignal2 = (value?: any) => {
 };
 
 export const createComputedSignal2 = <T>(qrl: QRL<() => T>) => {
+  throwIfQRLNotResolved(qrl);
+  return new ComputedSignal2(null, qrl as QRLInternal<() => T>);
+};
+
+export const throwIfQRLNotResolved = <T>(qrl: QRL<() => T>) => {
   const resolved = qrl.resolved;
   if (!resolved) {
     // When we are creating a signal using a use method, we need to ensure
@@ -55,7 +60,6 @@ export const createComputedSignal2 = <T>(qrl: QRL<() => T>) => {
     // using useMethod) it is OK to not resolve it until the graph is marked as dirty.
     throw qrl.resolve();
   }
-  return new ComputedSignal2(null, qrl as QRLInternal<() => T>);
 };
 
 /** @public */
@@ -227,8 +231,6 @@ export const ensureContainsEffect = (array: EffectSubscriptions[], effect: Effec
       return;
     }
   }
-  console.log('array', array);
-  console.log('array.push', array.push);
   array.push(effect);
 };
 
@@ -245,16 +247,22 @@ export const triggerEffects = (
       if (isTask(effect)) {
         effect.$flags$ |= TaskFlags.DIRTY;
         DEBUG && log('schedule.effect.task', pad('\n' + String(effect), '  '));
-        container.$scheduler$(
-          effect.$flags$ & TaskFlags.VISIBLE_TASK ? ChoreType.VISIBLE : ChoreType.TASK,
-          effectSubscriptions as fixMeAny
-        );
+        let choreType = ChoreType.TASK;
+        if (effect.$flags$ & TaskFlags.VISIBLE_TASK) {
+          choreType = ChoreType.VISIBLE;
+        } else if (effect.$flags$ & TaskFlags.RESOURCE) {
+          choreType = ChoreType.RESOURCE;
+        }
+        container.$scheduler$(choreType, effect);
       } else if (effect instanceof Signal2) {
         // we don't schedule ComputedSignal/DerivedSignal directly, instead we invalidate it and
         // and schedule the signals effects (recursively)
         if (effect instanceof ComputedSignal2) {
-          // TODO(misko): ensure that the computed signal's QRL is resolved.
-          // If not resolved scheduled it to be resolved.
+          // Ensure that the computed signal's QRL is resolved.
+          // If not resolved schedule it to be resolved.
+          if (!effect.$computeQrl$.resolved) {
+            container.$scheduler$(ChoreType.QRL_RESOLVE, null, effect.$computeQrl$);
+          }
         }
         (effect as ComputedSignal2<unknown> | DerivedSignal2<unknown>).$invalid$ = true;
         const previousSignal = signal;
@@ -302,8 +310,7 @@ export class ComputedSignal2<T> extends Signal2<T> {
   // we need the old value to know if effects need running after computation
   $invalid$: boolean = true;
 
-  constructor(container: Container2 | null, computeTask: QRLInternal<() => T> | null) {
-    assertDefined(computeTask, 'compute QRL must be provided');
+  constructor(container: Container2 | null, computeTask: QRLInternal<() => T>) {
     // The value is used for comparison when signals trigger, which can only happen
     // when it was calculated before. Therefore we can pass whatever we like.
     super(container, NEEDS_COMPUTATION);
