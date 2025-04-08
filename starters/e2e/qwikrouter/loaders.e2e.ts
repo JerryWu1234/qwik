@@ -151,5 +151,42 @@ test.describe("loaders", () => {
       const body = page.locator("body");
       await expect(body).toContainText("server-error-data");
     });
+
+    test("should verify route loaders", async ({ page }) => {
+      const testRouteHeading = page.locator("h1");
+
+      // 通过首页导航验证
+      await page.goto("/qwikrouter-test/");
+      const serbianLink = page.locator(
+        'a:has-text("Go to Serbian test route")',
+      );
+      await serbianLink.click();
+      await expect(testRouteHeading).toHaveText("Test route 1");
+
+      // 返回首页点击英文链接
+      await page.goBack();
+      const englishLink = page.locator(
+        'a:has-text("Go to English test route")',
+      );
+      await englishLink.click();
+      await expect(testRouteHeading).toHaveText("Test route 1");
+
+      // 验证其他路由
+      // 验证导航后DOM完整状态
+      await expect(page.locator("#nav-status")).toHaveText("loaded");
+      await expect(page.locator(".loader-indicator")).toBeVisible();
+
+      // 验证返回首页功能
+      // 验证首页2的加载状态
+      await expect(page.locator("#nav-status")).toHaveText("loaded");
+      await expect(page.locator(".loader-indicator")).toBeVisible();
+
+      // 通过导航返回测试路由
+      await page.locator("text=Back to Test Routes").click();
+      await expect(testRouteHeading).toHaveText("Test route 1");
+      await expect(page.locator("#loader-execution-order")).toContainText([
+        "homepage-loader",
+      ]);
+    });
   }
 });
