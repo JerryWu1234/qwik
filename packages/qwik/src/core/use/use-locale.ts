@@ -11,6 +11,21 @@ let _locale: string | undefined = undefined;
  * @public
  */
 export function getLocale(defaultLocale?: string): string {
+  // Prefer per-request locale from AsyncLocalStorage if available (server-side)
+  try {
+    const asyncStore = (globalThis as any).qcAsyncRequestStore;
+    const ev = asyncStore?.getStore?.();
+    const evLocale = ev && typeof ev.locale === 'function' ? ev.locale : undefined;
+    if (evLocale) {
+      const l = evLocale();
+      if (l) {
+        return l;
+      }
+    }
+  } catch {
+    // ignore and fallback
+  }
+
   if (_locale === undefined) {
     const ctx = tryGetInvokeContext();
     if (ctx && ctx.$locale$) {
@@ -30,6 +45,24 @@ export function getLocale(defaultLocale?: string): string {
  * @public
  */
 export function withLocale<T>(locale: string, fn: () => T): T {
+  // If running on the server with AsyncLocalStorage, set locale on the current request
+  try {
+    const asyncStore = (globalThis as any).qcAsyncRequestStore;
+    const ev = asyncStore?.getStore?.();
+    const evLocale = ev && typeof ev.locale === 'function' ? ev.locale : undefined;
+    if (evLocale) {
+      const previous = evLocale();
+      try {
+        evLocale(locale);
+        return fn();
+      } finally {
+        evLocale(previous);
+      }
+    }
+  } catch {
+    // ignore and fallback
+  }
+
   const previousLang = _locale;
   try {
     _locale = locale;
@@ -48,5 +81,17 @@ export function withLocale<T>(locale: string, fn: () => T): T {
  * @public
  */
 export function setLocale(locale: string): void {
+  // On the server, prefer setting the locale on the per-request store
+  try {
+    const asyncStore = (globalThis as any).qcAsyncRequestStore;
+    const ev = asyncStore?.getStore?.();
+    const evLocale = ev && typeof ev.locale === 'function' ? ev.locale : undefined;
+    if (evLocale) {
+      evLocale(locale);
+      return;
+    }
+  } catch {
+    // ignore and fallback
+  }
   _locale = locale;
 }
