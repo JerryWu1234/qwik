@@ -1,6 +1,29 @@
 import { tryGetInvokeContext } from './use-core';
+import { isServer } from '@qwik.dev/core/build';
 
 let _locale: string | undefined = undefined;
+
+type LocaleStore = { locale: string | undefined };
+
+type LocaleAsyncStore = import('node:async_hooks').AsyncLocalStorage<LocaleStore>;
+
+let localAsyncStore: LocaleAsyncStore | undefined;
+
+if (isServer) {
+  try {
+    // Lazy import to avoid bundling for non-Node targets
+    import('node:async_hooks')
+      .then((module) => {
+        const AsyncLocalStorage = module.AsyncLocalStorage as unknown as new () => LocaleAsyncStore;
+        localAsyncStore = new AsyncLocalStorage();
+      })
+      .catch(() => {
+        // ignore if AsyncLocalStorage is not available
+      });
+  } catch {
+    // ignore and fallback
+  }
+}
 
 /**
  * Retrieve the current locale.
@@ -11,16 +34,12 @@ let _locale: string | undefined = undefined;
  * @public
  */
 export function getLocale(defaultLocale?: string): string {
-  // Prefer per-request locale from AsyncLocalStorage if available (server-side)
+  // Prefer per-request locale from local AsyncLocalStorage if available (server-side)
   try {
-    const asyncStore = (globalThis as any).qcAsyncRequestStore;
-    const ev = asyncStore?.getStore?.();
-    const evLocale = ev && typeof ev.locale === 'function' ? ev.locale : undefined;
-    if (evLocale) {
-      const l = evLocale();
-      if (l) {
-        return l;
-      }
+    const store = localAsyncStore?.getStore?.();
+    const l = store?.locale;
+    if (l) {
+      return l;
     }
   } catch {
     // ignore and fallback
@@ -45,19 +64,10 @@ export function getLocale(defaultLocale?: string): string {
  * @public
  */
 export function withLocale<T>(locale: string, fn: () => T): T {
-  // If running on the server with AsyncLocalStorage, set locale on the current request
+  // If running on the server with AsyncLocalStorage, set locale for this async context
   try {
-    const asyncStore = (globalThis as any).qcAsyncRequestStore;
-    const ev = asyncStore?.getStore?.();
-    const evLocale = ev && typeof ev.locale === 'function' ? ev.locale : undefined;
-    if (evLocale) {
-      const previous = evLocale();
-      try {
-        evLocale(locale);
-        return fn();
-      } finally {
-        evLocale(previous);
-      }
+    if (localAsyncStore?.run) {
+      return localAsyncStore.run({ locale }, fn);
     }
   } catch {
     // ignore and fallback
@@ -81,13 +91,11 @@ export function withLocale<T>(locale: string, fn: () => T): T {
  * @public
  */
 export function setLocale(locale: string): void {
-  // On the server, prefer setting the locale on the per-request store
+  // On the server, prefer setting the locale on the local per-request store
   try {
-    const asyncStore = (globalThis as any).qcAsyncRequestStore;
-    const ev = asyncStore?.getStore?.();
-    const evLocale = ev && typeof ev.locale === 'function' ? ev.locale : undefined;
-    if (evLocale) {
-      evLocale(locale);
+    const store = localAsyncStore?.getStore?.();
+    if (store) {
+      store.locale = locale;
       return;
     }
   } catch {
