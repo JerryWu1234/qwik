@@ -37,7 +37,7 @@ export const resolveHead = (
     }
     return data;
   }) as any as ResolveSyncValue;
-  const storeEv = (globalThis as any).qcAsyncRequestStore?.getStore?.();
+  const storeEv = (globalThis as any).qcAsyncRequestStore;
   const headProps: DocumentHeadProps = {
     head,
     withLocale: (fn) => (storeEv ? fn() : withLocale(locale, fn)),

@@ -11,7 +11,6 @@ let localAsyncStore: LocaleAsyncStore | undefined;
 
 if (isServer) {
   try {
-    // Lazy import to avoid bundling for non-Node targets
     import('node:async_hooks')
       .then((module) => {
         const AsyncLocalStorage = module.AsyncLocalStorage as unknown as new () => LocaleAsyncStore;
