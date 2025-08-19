@@ -64,10 +64,11 @@ export function runQwikRouter<T>(
   return {
     response: responsePromise,
     requestEv,
-    completion: withLocale(requestEv.locale(), () =>
+    completion: withLocale(
+      requestEv.locale(),
       asyncStore
-        ? asyncStore.run(requestEv, () => runNext(requestEv, rebuildRouteInfo, resolve!))
-        : runNext(requestEv, rebuildRouteInfo, resolve!)
+        ? () => asyncStore!.run(requestEv, runNext, requestEv, rebuildRouteInfo, resolve!)
+        : () => runNext(requestEv, rebuildRouteInfo, resolve!)
     ),
   };
 }

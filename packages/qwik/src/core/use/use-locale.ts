@@ -10,18 +10,14 @@ type LocaleAsyncStore = import('node:async_hooks').AsyncLocalStorage<LocaleStore
 let localAsyncStore: LocaleAsyncStore | undefined;
 
 if (isServer) {
-  try {
-    import('node:async_hooks')
-      .then((module) => {
-        const AsyncLocalStorage = module.AsyncLocalStorage as unknown as new () => LocaleAsyncStore;
-        localAsyncStore = new AsyncLocalStorage();
-      })
-      .catch(() => {
-        // ignore if AsyncLocalStorage is not available
-      });
-  } catch {
-    // ignore and fallback
-  }
+  import('node:async_hooks')
+    .then((module) => {
+      const AsyncLocalStorage = module.AsyncLocalStorage as unknown as new () => LocaleAsyncStore;
+      localAsyncStore = new AsyncLocalStorage();
+    })
+    .catch(() => {
+      // ignore if AsyncLocalStorage is not available
+    });
 }
 
 /**
@@ -35,10 +31,9 @@ if (isServer) {
 export function getLocale(defaultLocale?: string): string {
   // Prefer per-request locale from local AsyncLocalStorage if available (server-side)
   try {
-    const store = localAsyncStore?.getStore?.();
-    const l = store?.locale;
-    if (l) {
-      return l;
+    const locale = localAsyncStore?.getStore?.()?.locale;
+    if (locale) {
+      return locale;
     }
   } catch {
     // ignore and fallback

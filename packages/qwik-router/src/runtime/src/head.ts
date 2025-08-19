@@ -40,7 +40,7 @@ export const resolveHead = (
   const storeEv = (globalThis as any).qcAsyncRequestStore;
   const headProps: DocumentHeadProps = {
     head,
-    withLocale: (fn) => (storeEv ? fn() : withLocale(locale, fn)),
+    withLocale: storeEv ? (fn) => fn() : (fn) => withLocale(locale, fn),
     resolveValue: getData,
     ...routeLocation,
   };
