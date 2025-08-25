@@ -1,18 +1,17 @@
 import { tryGetInvokeContext } from './use-core';
 import { isServer } from '@qwik.dev/core/build';
+import type { AsyncLocalStorage } from 'node:async_hooks';
 
 let _locale: string | undefined = undefined;
 
-type LocaleStore = { locale: string | undefined };
-
-type LocaleAsyncStore = import('node:async_hooks').AsyncLocalStorage<LocaleStore>;
-
-let localAsyncStore: LocaleAsyncStore | undefined;
+let localAsyncStore: AsyncLocalStorage<{ locale?: string }> | undefined;
 
 if (isServer) {
   import('node:async_hooks')
     .then((module) => {
-      const AsyncLocalStorage = module.AsyncLocalStorage as unknown as new () => LocaleAsyncStore;
+      const AsyncLocalStorage = module.AsyncLocalStorage as unknown as new () => AsyncLocalStorage<{
+        locale?: string;
+      }>;
       localAsyncStore = new AsyncLocalStorage();
     })
     .catch(() => {
@@ -30,13 +29,11 @@ if (isServer) {
  */
 export function getLocale(defaultLocale?: string): string {
   // Prefer per-request locale from local AsyncLocalStorage if available (server-side)
-  try {
-    const locale = localAsyncStore?.getStore?.()?.locale;
+  if (localAsyncStore) {
+    const locale = localAsyncStore.getStore()?.locale;
     if (locale) {
       return locale;
     }
-  } catch {
-    // ignore and fallback
   }
 
   if (_locale === undefined) {
@@ -60,7 +57,7 @@ export function getLocale(defaultLocale?: string): string {
 export function withLocale<T>(locale: string, fn: () => T): T {
   // If running on the server with AsyncLocalStorage, set locale for this async context
   try {
-    if (localAsyncStore?.run) {
+    if (localAsyncStore) {
       return localAsyncStore.run({ locale }, fn);
     }
   } catch {
@@ -87,9 +84,9 @@ export function withLocale<T>(locale: string, fn: () => T): T {
 export function setLocale(locale: string): void {
   // On the server, prefer setting the locale on the local per-request store
   try {
-    const store = localAsyncStore?.getStore?.();
-    if (store) {
-      store.locale = locale;
+    if (localAsyncStore && localAsyncStore.getStore) {
+      const store = localAsyncStore.getStore();
+      store!.locale = locale;
       return;
     }
   } catch {

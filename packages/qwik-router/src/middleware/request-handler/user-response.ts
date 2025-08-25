@@ -14,6 +14,8 @@ import {
 import { encoder } from './resolve-request-handlers';
 import type { QwikSerializer, ServerRequestEvent, StatusCodes } from './types';
 import { withLocale } from '@qwik.dev/core';
+import { setAsyncRequestStore } from './async-request-store';
+import type { AsyncStore } from './async-request-store';
 // Import separately to avoid duplicate imports in the vite dev server
 import {
   AbortMessage,
@@ -33,7 +35,7 @@ import('node:async_hooks')
   .then((module) => {
     const AsyncLocalStorage = module.AsyncLocalStorage;
     asyncStore = new AsyncLocalStorage<RequestEventInternal>();
-    globalThis.qcAsyncRequestStore = asyncStore;
+    setAsyncRequestStore(asyncStore);
   })
   .catch((err) => {
     console.warn(
