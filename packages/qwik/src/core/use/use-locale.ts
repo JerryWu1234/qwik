@@ -55,13 +55,8 @@ export function getLocale(defaultLocale?: string): string {
  * @public
  */
 export function withLocale<T>(locale: string, fn: () => T): T {
-  // If running on the server with AsyncLocalStorage, set locale for this async context
-  try {
-    if (localAsyncStore) {
-      return localAsyncStore.run({ locale }, fn);
-    }
-  } catch {
-    // ignore and fallback
+  if (localAsyncStore) {
+    return localAsyncStore.run({ locale }, fn);
   }
 
   const previousLang = _locale;
@@ -82,15 +77,10 @@ export function withLocale<T>(locale: string, fn: () => T): T {
  * @public
  */
 export function setLocale(locale: string): void {
-  // On the server, prefer setting the locale on the local per-request store
-  try {
-    if (localAsyncStore && localAsyncStore.getStore) {
-      const store = localAsyncStore.getStore();
-      store!.locale = locale;
-      return;
-    }
-  } catch {
-    // ignore and fallback
+  if (localAsyncStore && localAsyncStore.getStore) {
+    const store = localAsyncStore.getStore();
+    store!.locale = locale;
+    return;
   }
   _locale = locale;
 }
