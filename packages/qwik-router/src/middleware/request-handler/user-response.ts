@@ -33,7 +33,6 @@ import('node:async_hooks')
   .then((module) => {
     const AsyncLocalStorage = module.AsyncLocalStorage;
     const asyncStore = new AsyncLocalStorage<RequestEventInternal>();
-    console.log('AsyncLocalStorage', asyncStore);
     setAsyncRequestStore(asyncStore);
   })
   .catch((err) => {
