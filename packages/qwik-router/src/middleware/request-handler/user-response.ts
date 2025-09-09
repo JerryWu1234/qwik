@@ -14,7 +14,7 @@ import {
 import { encoder } from './resolve-request-handlers';
 import type { QwikSerializer, ServerRequestEvent, StatusCodes } from './types';
 import { withLocale } from '@qwik.dev/core';
-import { setAsyncRequestStore, asyncRequestStore } from './async-request-store';
+import { asyncRequestStore } from './async-request-store';
 // Import separately to avoid duplicate imports in the vite dev server
 import {
   AbortMessage,
@@ -28,19 +28,6 @@ export interface QwikRouterRun<T> {
   requestEv: RequestEvent;
   completion: Promise<unknown>;
 }
-
-import('node:async_hooks')
-  .then((module) => {
-    const AsyncLocalStorage = module.AsyncLocalStorage;
-    const asyncStore = new AsyncLocalStorage<RequestEventInternal>();
-    setAsyncRequestStore(asyncStore);
-  })
-  .catch((err) => {
-    console.warn(
-      'AsyncLocalStorage not available, continuing without it. This might impact concurrent server calls.',
-      err
-    );
-  });
 
 export function runQwikRouter<T>(
   serverRequestEv: ServerRequestEvent<T>,

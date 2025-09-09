@@ -4,15 +4,12 @@ import type { AsyncLocalStorage } from 'node:async_hooks';
 
 let _locale: string | undefined = undefined;
 
-let localAsyncStore: AsyncLocalStorage<{ locale?: string }> | undefined;
+let localAsyncStore: AsyncLocalStorage<string> | undefined;
 
 if (isServer) {
   import('node:async_hooks')
     .then((module) => {
-      const AsyncLocalStorage = module.AsyncLocalStorage as unknown as new () => AsyncLocalStorage<{
-        locale?: string;
-      }>;
-      localAsyncStore = new AsyncLocalStorage();
+      localAsyncStore = new module.AsyncLocalStorage();
     })
     .catch(() => {
       // ignore if AsyncLocalStorage is not available
@@ -30,7 +27,7 @@ if (isServer) {
 export function getLocale(defaultLocale?: string): string {
   // Prefer per-request locale from local AsyncLocalStorage if available (server-side)
   if (localAsyncStore) {
-    const locale = localAsyncStore.getStore()?.locale;
+    const locale = localAsyncStore.getStore();
     if (locale) {
       return locale;
     }
@@ -56,7 +53,7 @@ export function getLocale(defaultLocale?: string): string {
  */
 export function withLocale<T>(locale: string, fn: () => T): T {
   if (localAsyncStore) {
-    return localAsyncStore.run({ locale }, fn);
+    return localAsyncStore.run(locale, fn);
   }
 
   const previousLang = _locale;
@@ -77,9 +74,8 @@ export function withLocale<T>(locale: string, fn: () => T): T {
  * @public
  */
 export function setLocale(locale: string): void {
-  if (localAsyncStore && localAsyncStore.getStore) {
-    const store = localAsyncStore.getStore();
-    store!.locale = locale;
+  if (isServer) {
+    // ignore on server; use withLocale() within a request scope instead
     return;
   }
   _locale = locale;

@@ -9,3 +9,16 @@ export const asyncRequestStore: AsyncStore | undefined = globalThis.qcAsyncReque
 export const setAsyncRequestStore = (store: AsyncStore | undefined) => {
   globalThis.qcAsyncRequestStore = store;
 };
+
+import('node:async_hooks')
+  .then((module) => {
+    const AsyncLocalStorage = module.AsyncLocalStorage;
+    const asyncStore = new AsyncLocalStorage<RequestEventInternal>();
+    setAsyncRequestStore(asyncStore);
+  })
+  .catch((err) => {
+    console.warn(
+      'AsyncLocalStorage not available, continuing without it. This might impact concurrent server calls.',
+      err
+    );
+  });
