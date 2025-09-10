@@ -3,18 +3,10 @@ import type { AsyncLocalStorage } from 'node:async_hooks';
 
 export type AsyncStore = AsyncLocalStorage<RequestEventInternal>;
 
-// Qwik Core will also be using the async store if this is present
-export const asyncRequestStore: AsyncStore | undefined = globalThis.qcAsyncRequestStore;
-
-export const setAsyncRequestStore = (store: AsyncStore | undefined) => {
-  globalThis.qcAsyncRequestStore = store;
-};
-
 import('node:async_hooks')
   .then((module) => {
     const AsyncLocalStorage = module.AsyncLocalStorage;
-    const asyncStore = new AsyncLocalStorage<RequestEventInternal>();
-    setAsyncRequestStore(asyncStore);
+    asyncRequestStore = new AsyncLocalStorage<RequestEventInternal>();
   })
   .catch((err) => {
     console.warn(
@@ -22,3 +14,6 @@ import('node:async_hooks')
       err
     );
   });
+
+// Qwik Core will also be using the async store if this is present
+export let asyncRequestStore: AsyncStore | undefined = undefined;

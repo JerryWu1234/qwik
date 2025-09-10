@@ -74,9 +74,5 @@ export function withLocale<T>(locale: string, fn: () => T): T {
  * @public
  */
 export function setLocale(locale: string): void {
-  if (isServer) {
-    // ignore on server; use withLocale() within a request scope instead
-    return;
-  }
   _locale = locale;
 }
