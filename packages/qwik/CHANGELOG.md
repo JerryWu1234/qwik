@@ -1,5 +1,65 @@
 # @qwik.dev/core
 
+## 2.0.0-beta.10
+
+### Minor Changes
+
+- ✨ split Qwik Core and Router dev experience. Core now only adjusts the html using the Vite hook for it, so it can work in any environment or client-only. You can make a Qwik application client-only by running `qwik add csr` now. (by [@wmertens](https://github.com/wmertens) in [#7890](https://github.com/QwikDev/qwik/pull/7890))
+- ✨ Qwik Route now runs dev mode using the node middleware, which is the same as production, and can now hot-reload when routes are added. It does this by transforming the response while it streams to add the dev scripts. This opens the door for Vite Environment support.
+- ✨ `qwikVite()` SSR builds now reads the manifest from the client build whenever possible. You can still pass in the manifest yourself if needed.
+- 🐞🩹 Qwik Router's Vite plugin no longer imports Qwik Core, a cause of duplicate imports in dev and preview mode.
+- 🐞🩹 Sometimes, SSG hangs after completion. The cause is still unknown, but now there is a workaround by forcing the process to exit after SSG is done.
+
+### Patch Changes
+
+- 🐞🩹 resuming shadow dom container with multiple root children (by [@Varixo](https://github.com/Varixo) in [#7943](https://github.com/QwikDev/qwik/pull/7943))
+
+## 2.0.0-beta.9
+
+### Minor Changes
+
+- ✨ new async scheduler (by [@Varixo](https://github.com/Varixo) in [#7816](https://github.com/QwikDev/qwik/pull/7816))
+
+- BREAKING: (slightly) Qwik will no longer scan all modules at build start to detect Qwik modules (which should be bundled into your server code). Instead, a much faster build-time check is done, and Qwik will tell you if you need to update your `ssr.noExternal` settings in your Vite config. (by [@wmertens](https://github.com/wmertens) in [#7784](https://github.com/QwikDev/qwik/pull/7784))
+
+- ✨ expose `loading` and `error` fields of async computed signal (by [@Varixo](https://github.com/Varixo) in [#7876](https://github.com/QwikDev/qwik/pull/7876))
+
+### Patch Changes
+
+- 🐞🩹 ignore diffing for deleted parent (by [@Varixo](https://github.com/Varixo) in [#7816](https://github.com/QwikDev/qwik/pull/7816))
+
+- 🐞🩹 convert any destructured props to restProps helper (by [@Varixo](https://github.com/Varixo) in [#7880](https://github.com/QwikDev/qwik/pull/7880))
+
+- 🐞🩹 calling sync qrls should not go through scheduler (by [@Varixo](https://github.com/Varixo) in [#7816](https://github.com/QwikDev/qwik/pull/7816))
+
+- ✨ add SSR backpatching (attributes-only) to ensure SSR/CSR parity for signal-driven attributes; limited to attribute updates (not OoO streaming) (by [@thejackshelton](https://github.com/thejackshelton) in [#7900](https://github.com/QwikDev/qwik/pull/7900))
+
+- 🐞🩹 avoid potential name conflicts with rest props (by [@Varixo](https://github.com/Varixo) in [#7880](https://github.com/QwikDev/qwik/pull/7880))
+
+- 🐞🩹 handling spread props on element node (by [@Varixo](https://github.com/Varixo) in [#7929](https://github.com/QwikDev/qwik/pull/7929))
+
+- 🐞🩹 finding parent dom element from projected content (by [@Varixo](https://github.com/Varixo) in [#7886](https://github.com/QwikDev/qwik/pull/7886))
+
+- 🐞🩹 calling document:onQInit qrls (by [@Varixo](https://github.com/Varixo) in [#7816](https://github.com/QwikDev/qwik/pull/7816))
+
+- 🐞🩹 finding slot parent during scheduling chores (by [@Varixo](https://github.com/Varixo) in [#7816](https://github.com/QwikDev/qwik/pull/7816))
+
+- 🐞🩹 resuming nested container in shadow root (by [@Varixo](https://github.com/Varixo) in [#7937](https://github.com/QwikDev/qwik/pull/7937))
+
+- 🐞🩹 computed signal recomputing and triggering effects (by [@Varixo](https://github.com/Varixo) in [#7816](https://github.com/QwikDev/qwik/pull/7816))
+
+## 2.0.0-beta.8
+
+### Patch Changes
+
+- 🐞🩹 handle falsy value as context value (by [@Varixo](https://github.com/Varixo) in [#7814](https://github.com/QwikDev/qwik/pull/7814))
+
+- Add explicit tag nesting rules for <picture> and <button> elements (by [@tzdesign](https://github.com/tzdesign) in [#7798](https://github.com/QwikDev/qwik/pull/7798))
+
+- 🐞🩹 reactivity after spreading props (by [@Varixo](https://github.com/Varixo) in [#7809](https://github.com/QwikDev/qwik/pull/7809))
+
+- 🐞🩹 handle falsy value for dangerouslySetInnerHTML (by [@Varixo](https://github.com/Varixo) in [#7810](https://github.com/QwikDev/qwik/pull/7810))
+
 ## 2.0.0-beta.7
 
 ## 2.0.0-beta.6
@@ -359,6 +419,24 @@
 ### Patch Changes
 
 - 🐞🩹 do not trigger effects if computed value is not changed (by [@Varixo](https://github.com/Varixo) in [#6996](https://github.com/QwikDev/qwik/pull/6996))
+
+## 1.16.0
+
+### Minor Changes
+
+- ✨ bump Vite to v7 (by [@gioboa](https://github.com/gioboa) in [#7762](https://github.com/QwikDev/qwik/pull/7762))
+
+### Patch Changes
+
+- 🐞🩹 Keeping the service worker components now properly unregisters them. (by [@maiieul](https://github.com/maiieul) in [#7781](https://github.com/QwikDev/qwik/pull/7781))
+
+- 🛠 remove a grace period before unregistering events from qwikloader (by [@Varixo](https://github.com/Varixo) in [#7818](https://github.com/QwikDev/qwik/pull/7818))
+
+- 🐞🩹 Keeping the service worker components now also removes their associated Cache storage. (by [@maiieul](https://github.com/maiieul) in [#7782](https://github.com/QwikDev/qwik/pull/7782))
+
+- 🐞🩹 fix up open in editor feature (by [@LazyClicks](https://github.com/LazyClicks) in [#7785](https://github.com/QwikDev/qwik/pull/7785))
+
+- 🐞🩹 SSR was missing some places with nonce for CSP. Now CSP should work even when strict-dynamic (by [@wmertens](https://github.com/wmertens) in [#7776](https://github.com/QwikDev/qwik/pull/7776))
 
 ## 1.15.0
 

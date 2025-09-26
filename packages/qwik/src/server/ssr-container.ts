@@ -10,8 +10,8 @@ import {
 import { isDev } from '@qwik.dev/core/build';
 import type { ResolvedManifest } from '@qwik.dev/core/optimizer';
 import {
-  ChoreType,
   DEBUG_TYPE,
+  ELEMENT_BACKPATCH_DATA,
   ELEMENT_ID,
   ELEMENT_KEY,
   ELEMENT_PROPS,
@@ -68,7 +68,8 @@ import {
   type SymbolToChunkResolver,
   type ValueOrPromise,
 } from './qwik-types';
-import { getQwikLoaderScript } from './scripts';
+
+import { getQwikLoaderScript, getQwikBackpatchExecutorScript } from './scripts';
 import { DomRef, SsrComponentFrame, SsrNode } from './ssr-node';
 import { Q_FUNCS_PREFIX } from './ssr-render';
 import {
@@ -78,7 +79,12 @@ import {
   isSelfClosingTag,
   isTagAllowed,
 } from './tag-nesting';
-import { VNodeDataFlag, type RenderOptions, type RenderToStreamResult } from './types';
+import {
+  VNodeDataFlag,
+  type BackpatchEntry,
+  type RenderOptions,
+  type RenderToStreamResult,
+} from './types';
 import { createTimer } from './utils';
 import {
   CLOSE_FRAGMENT,
@@ -155,6 +161,7 @@ interface ElementFrame {
    */
   depthFirstElementIdx: number;
   vNodeData: VNodeData;
+  currentFile: string | null;
 }
 
 const EMPTY_OBJ = {};
@@ -188,9 +195,12 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
    * - From manifest injections
    */
   public additionalBodyNodes = new Array<JSXNodeInternal>();
+
   private lastNode: ISsrNode | null = null;
   private currentComponentNode: ISsrNode | null = null;
   private styleIds = new Set<string>();
+  private isBackpatchExecutorEmitted = false;
+  private backpatchMap = new Map<number, BackpatchEntry[]>();
 
   private currentElementFrame: ElementFrame | null = null;
 
@@ -210,19 +220,9 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
   public $instanceHash$ = hash();
   // Temporary flag to find missing roots after the state was serialized
   private $noMoreRoots$ = false;
+
   constructor(opts: Required<SSRRenderOptions>) {
-    super(
-      () => {
-        try {
-          return this.$scheduler$(ChoreType.WAIT_FOR_ALL);
-        } catch (e) {
-          this.handleError(e, null!);
-        }
-      },
-      () => null,
-      opts.renderOptions.serverData ?? EMPTY_OBJ,
-      opts.locale
-    );
+    super(() => null, opts.renderOptions.serverData ?? EMPTY_OBJ, opts.locale);
     this.symbolToChunkResolver = (symbol: string): string => {
       const idx = symbol.lastIndexOf('_');
       const chunk = this.resolvedManifest.mapper[idx == -1 ? symbol : symbol.substring(idx + 1)];
@@ -248,8 +248,24 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
 
   ensureProjectionResolved(_host: HostElement): void {}
 
-  handleError(err: any, _$host$: HostElement): void {
+  handleError(err: any, _$host$: null): void {
     throw err;
+  }
+
+  addBackpatchEntry(
+    ssrNodeId: string,
+    attrName: string,
+    serializedValue: string | true | null
+  ): void {
+    // we want to always parse as decimal here
+    const elementIndex = parseInt(ssrNodeId, 10);
+    const entry: BackpatchEntry = {
+      attrName,
+      value: serializedValue,
+    };
+    const entries = this.backpatchMap.get(elementIndex) || [];
+    entries.push(entry);
+    this.backpatchMap.set(elementIndex, entries);
   }
 
   async render(jsx: JSXOutput) {
@@ -279,14 +295,14 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
       if (ctx != null && mapArray_has(ctx, contextId.id, 0)) {
         return mapArray_get(ctx, contextId.id, 0) as T;
       }
-      ssrNode = ssrNode.parentSsrNode;
+      ssrNode = ssrNode.parentComponent;
     }
     return undefined;
   }
 
   getParentHost(host: HostElement): HostElement | null {
     const ssrNode: ISsrNode = host as any;
-    return ssrNode.parentSsrNode as ISsrNode | null;
+    return ssrNode.parentComponent as ISsrNode | null;
   }
 
   setHostProp<T>(host: ISsrNode, name: string, value: T): void {
@@ -356,6 +372,8 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
     vNodeData_openElement(this.currentElementFrame!.vNodeData);
     this.write('<');
     this.write(elementName);
+    // create here for writeAttrs method to use it
+    const lastNode = this.getOrCreateLastNode();
     if (varAttrs) {
       innerHTML = this.writeAttrs(elementName, varAttrs, false, currentFile);
     }
@@ -366,7 +384,10 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
       innerHTML = this.writeAttrs(elementName, constAttrs, true, currentFile) || innerHTML;
     }
     this.write('>');
-    this.lastNode = null;
+
+    if (lastNode) {
+      lastNode.setTreeNonUpdatable();
+    }
     return innerHTML;
   }
 
@@ -442,6 +463,10 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
   /** Writes closing data to vNodeData for fragment boundaries */
   closeFragment() {
     vNodeData_closeFragment(this.currentElementFrame!.vNodeData);
+
+    if (this.currentComponentNode) {
+      this.currentComponentNode.setTreeNonUpdatable();
+    }
     this.lastNode = null;
   }
 
@@ -493,7 +518,7 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
     const componentFrame = this.componentStack.pop()!;
     componentFrame.releaseUnclaimedProjections(this.unclaimedProjections);
     this.closeFragment();
-    this.currentComponentNode = this.currentComponentNode?.parentSsrNode || null;
+    this.currentComponentNode = this.currentComponentNode?.parentComponent || null;
   }
 
   /** Write a text node with correct escaping. Save the length of the text node in the vNodeData. */
@@ -525,7 +550,8 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
         this.currentElementFrame!.vNodeData,
         // we start at -1, so we need to add +1
         this.currentElementFrame!.depthFirstElementIdx + 1,
-        this.cleanupQueue
+        this.cleanupQueue,
+        this.currentElementFrame!.currentFile
       );
     }
     return this.lastNode!;
@@ -597,6 +623,8 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
         this.emitVNodeData();
         preloaderPost(this, this.renderOptions, this.$serverData$?.nonce);
         this.emitSyncFnsData();
+        this.emitPatchDataIfNeeded();
+        this.emitExecutorIfNeeded();
         this.emitQwikLoaderAtBottomIfNeeded();
       })
     );
@@ -791,6 +819,45 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
       this.write(']');
       this.closeElement();
     }
+  }
+
+  emitPatchDataIfNeeded(): void {
+    const patches: (string | number | boolean | null)[] = [];
+    for (const [elementIndex, backpatchEntries] of this.backpatchMap) {
+      for (const backpatchEntry of backpatchEntries) {
+        patches.push(elementIndex, backpatchEntry.attrName, backpatchEntry.value);
+      }
+    }
+
+    this.backpatchMap.clear();
+
+    if (patches.length > 0) {
+      this.isBackpatchExecutorEmitted = true;
+      const scriptAttrs = ['type', ELEMENT_BACKPATCH_DATA];
+      if (this.renderOptions.serverData?.nonce) {
+        scriptAttrs.push('nonce', this.renderOptions.serverData.nonce);
+      }
+      this.openElement('script', scriptAttrs);
+      this.write(JSON.stringify(patches));
+      this.closeElement();
+    }
+  }
+
+  private emitExecutorIfNeeded(): void {
+    if (!this.isBackpatchExecutorEmitted) {
+      return;
+    }
+
+    const scriptAttrs = ['type', 'text/javascript'];
+    if (this.renderOptions.serverData?.nonce) {
+      scriptAttrs.push('nonce', this.renderOptions.serverData.nonce);
+    }
+    this.openElement('script', scriptAttrs);
+
+    const backpatchScript = getQwikBackpatchExecutorScript({ debug: isDev });
+    this.write(backpatchScript);
+
+    this.closeElement();
   }
 
   emitPreloaderPre() {
@@ -1019,6 +1086,7 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
       elementName,
       depthFirstElementIdx,
       vNodeData: [VNodeDataFlag.NONE],
+      currentFile: isDev ? currentFile || null : null,
     };
     this.currentElementFrame = frame;
     this.vNodeDatas.push(frame.vNodeData);
@@ -1092,6 +1160,7 @@ class SSRContainer extends _SharedContainer implements ISSRContainer {
             $scopedStyleIdPrefix$: styleScopedId,
             $isConst$: isConst,
           });
+
           value = this.trackSignalValue(value, lastNode, key, signalData);
         }
 

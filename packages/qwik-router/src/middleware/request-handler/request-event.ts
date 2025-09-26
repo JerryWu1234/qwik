@@ -1,5 +1,5 @@
 import type { ValueOrPromise } from '@qwik.dev/core';
-import { _UNINITIALIZED, type SerializationStrategy } from '@qwik.dev/core/internal';
+import { _deserialize, _UNINITIALIZED, type SerializationStrategy } from '@qwik.dev/core/internal';
 import { QDATA_KEY } from '../../runtime/src/constants';
 import {
   LoadedRouteProp,
@@ -24,7 +24,6 @@ import { asyncRequestStore } from './async-request-store';
 import type {
   CacheControl,
   CacheControlTarget,
-  QwikSerializer,
   RequestEvent,
   RequestEventCommon,
   RequestEventLoader,
@@ -38,7 +37,6 @@ import { IsQData, QDATA_JSON, QDATA_JSON_LEN } from './user-response';
 const RequestEvLoaders = Symbol('RequestEvLoaders');
 const RequestEvMode = Symbol('RequestEvMode');
 const RequestEvRoute = Symbol('RequestEvRoute');
-export const RequestEvQwikSerializer = Symbol('RequestEvQwikSerializer');
 export const RequestEvLoaderSerializationStrategyMap = Symbol(
   'RequestEvLoaderSerializationStrategyMap'
 );
@@ -56,7 +54,6 @@ export function createRequestEvent(
   loadedRoute: LoadedRoute | null,
   requestHandlers: RequestHandler<any>[],
   basePathname: string,
-  qwikSerializer: QwikSerializer,
   resolved: (response: any) => void
 ) {
   const { request, platform, env } = serverRequestEv;
@@ -161,7 +158,6 @@ export function createRequestEvent(
     get [RequestEvRoute]() {
       return loadedRoute;
     },
-    [RequestEvQwikSerializer]: qwikSerializer,
     cookie,
     headers,
     env,
@@ -214,7 +210,7 @@ export function createRequestEvent(
         }
         if (loaders[id] === _UNINITIALIZED) {
           const isDev = getRequestMode(requestEv) === 'dev';
-          await getRouteLoaderPromise(loaderOrAction, loaders, requestEv, isDev, qwikSerializer);
+          await getRouteLoaderPromise(loaderOrAction, loaders, requestEv, isDev);
         }
       }
 
@@ -239,6 +235,7 @@ export function createRequestEvent(
 
     error: <T = any>(statusCode: number, message: T) => {
       status = statusCode;
+      headers.delete('Cache-Control');
       return new ServerError(statusCode, message);
     },
 
@@ -252,8 +249,8 @@ export function createRequestEvent(
         }
         headers.set('Location', fixedURL);
       }
-      // Fallback to 'no-store' when end user is not managing Cache-Control header
-      if (statusCode > 301 && !headers.get('Cache-Control')) {
+      headers.delete('Cache-Control');
+      if (statusCode > 301) {
         headers.set('Cache-Control', 'no-store');
       }
       exit();
@@ -276,6 +273,7 @@ export function createRequestEvent(
     fail: <T extends Record<string, any>>(statusCode: number, data: T): FailReturn<T> => {
       check();
       status = statusCode;
+      headers.delete('Cache-Control');
       return {
         failed: true,
         ...data,
@@ -296,7 +294,7 @@ export function createRequestEvent(
       if (requestData !== undefined) {
         return requestData;
       }
-      return (requestData = parseRequest(requestEv, sharedMap, qwikSerializer));
+      return (requestData = parseRequest(requestEv, sharedMap));
     },
 
     json: (statusCode: number, data: any) => {
@@ -342,7 +340,6 @@ export interface RequestEventInternal extends RequestEvent, RequestEventLoader {
   [RequestEvLoaderSerializationStrategyMap]: Map<string, SerializationStrategy>;
   [RequestEvMode]: ServerRequestMode;
   [RequestEvRoute]: LoadedRoute | null;
-  [RequestEvQwikSerializer]: QwikSerializer;
 
   /**
    * Check if this request is already written to.
@@ -385,8 +382,7 @@ const ABORT_INDEX = Number.MAX_SAFE_INTEGER;
 
 const parseRequest = async (
   { request, method, query }: RequestEventInternal,
-  sharedMap: Map<string, any>,
-  qwikSerializer: QwikSerializer
+  sharedMap: Map<string, any>
 ): Promise<JSONValue | undefined> => {
   const type = request.headers.get('content-type')?.split(/[;,]/, 1)[0].trim() ?? '';
   if (type === 'application/x-www-form-urlencoded' || type === 'multipart/form-data') {
@@ -401,13 +397,13 @@ const parseRequest = async (
       const data = query.get(QDATA_KEY);
       if (data) {
         try {
-          return qwikSerializer._deserialize(decodeURIComponent(data)) as JSONValue;
+          return _deserialize(decodeURIComponent(data)) as JSONValue;
         } catch {
           //
         }
       }
     }
-    return qwikSerializer._deserialize(await request.text()) as JSONValue;
+    return _deserialize(await request.text()) as JSONValue;
   }
   return undefined;
 };
