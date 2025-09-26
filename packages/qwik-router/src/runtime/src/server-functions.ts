@@ -64,8 +64,8 @@ import type {
 import { useAction, useLocation, useQwikRouterEnv } from './use-functions';
 
 import type { FormSubmitCompletedDetail } from './form-component';
-import { deepFreeze } from './utils';
 import { asyncRequestStore } from '../../middleware/request-handler/async-request-store';
+import { deepFreeze } from './deepFreeze';
 
 /** @internal */
 export const routeActionQrl = ((

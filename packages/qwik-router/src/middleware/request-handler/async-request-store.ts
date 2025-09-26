@@ -1,4 +1,4 @@
-import { isServer } from 'packages/qwik/dist';
+import { isServer } from '@qwik.dev/core';
 import type { RequestEventInternal } from './request-event';
 import type { AsyncLocalStorage } from 'node:async_hooks';
 
