@@ -20,7 +20,7 @@ import {
   RewriteMessage,
 } from '@qwik.dev/router/middleware/request-handler';
 import { encoder, getRouteLoaderPromise } from './resolve-request-handlers';
-import { asyncRequestStore } from './async-request-store';
+
 import type {
   CacheControl,
   CacheControlTarget,
@@ -81,7 +81,7 @@ export function createRequestEvent(
 
     while (routeModuleIndex < requestHandlers.length) {
       const moduleRequestHandler = requestHandlers[routeModuleIndex];
-      const asyncStore = asyncRequestStore;
+      const asyncStore = globalThis.qcAsyncRequestStore;
       const result = asyncStore?.run
         ? asyncStore.run(requestEv, moduleRequestHandler, requestEv)
         : moduleRequestHandler(requestEv);
