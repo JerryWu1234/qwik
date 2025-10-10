@@ -32,7 +32,7 @@ import type {
   ServerRequestEvent,
   ServerRequestMode,
 } from './types';
-import { IsQData, QDATA_JSON, QDATA_JSON_LEN } from './user-response';
+import { IsQData, getRouteMatchPathname } from './user-response';
 import { qcAsyncRequestStore } from './async-hooks';
 
 const RequestEvLoaders = Symbol('RequestEvLoaders');
@@ -63,11 +63,11 @@ export function createRequestEvent(
   const cookie = new Cookie(request.headers.get('cookie'));
   const headers = new Headers();
   const url = new URL(request.url);
-  if (url.pathname.endsWith(QDATA_JSON)) {
-    url.pathname = url.pathname.slice(0, -QDATA_JSON_LEN);
-    if (!globalThis.__NO_TRAILING_SLASH__ && !url.pathname.endsWith('/')) {
-      url.pathname += '/';
-    }
+  const { pathname, isInternal } = getRouteMatchPathname(url.pathname);
+  if (isInternal) {
+    // For the middleware callbacks we pretend it's a regular request
+    url.pathname = pathname;
+    // But we set this flag so that they can act differently
     sharedMap.set(IsQData, true);
   }
 
@@ -145,9 +145,11 @@ export function createRequestEvent(
     return exit();
   };
 
-  const exit = () => {
+  const exit = <T extends AbortMessage | RedirectMessage | RewriteMessage>(
+    message: T = new AbortMessage() as T
+  ) => {
     routeModuleIndex = ABORT_INDEX;
-    return new AbortMessage();
+    return message;
   };
 
   const loaders: Record<string, ValueOrPromise<unknown> | undefined> = {};
@@ -243,18 +245,18 @@ export function createRequestEvent(
       check();
       status = statusCode;
       if (url) {
-        const fixedURL = url.replace(/([^:])\/{2,}/g, '$1/');
-        if (url !== fixedURL) {
+        if (/([^:])\/{2,}/.test(url)) {
+          const fixedURL = url.replace(/([^:])\/{2,}/g, '$1/');
           console.warn(`Redirect URL ${url} is invalid, fixing to ${fixedURL}`);
+          url = fixedURL;
         }
-        headers.set('Location', fixedURL);
+        headers.set('Location', url);
       }
       headers.delete('Cache-Control');
       if (statusCode > 301) {
         headers.set('Cache-Control', 'no-store');
       }
-      exit();
-      return new RedirectMessage();
+      return exit(new RedirectMessage());
     },
 
     rewrite: (pathname: string) => {
@@ -263,7 +265,7 @@ export function createRequestEvent(
         throw new Error('Rewrite does not support absolute urls');
       }
       sharedMap.set(RequestEvIsRewrite, true);
-      return new RewriteMessage(pathname.replace(/\/+/g, '/'));
+      return exit(new RewriteMessage(pathname.replace(/\/+/g, '/')));
     },
 
     defer: (returnData) => {
