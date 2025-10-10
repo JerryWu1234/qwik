@@ -1,5 +1,5 @@
 import type { AsyncLocalStorage } from 'node:async_hooks';
-import { isServer } from 'packages/qwik/core-internal';
+import { isServer } from '@qwik.dev/core/build';
 export let qcAsyncRequestStore: AsyncLocalStorage<RequestEventInternal> | undefined;
 
 if (isServer) {
