@@ -33,7 +33,6 @@ import type {
   ServerRequestMode,
 } from './types';
 import { IsQData, getRouteMatchPathname } from './user-response';
-import { qcAsyncRequestStore } from './async-hooks';
 
 const RequestEvLoaders = Symbol('RequestEvLoaders');
 const RequestEvMode = Symbol('RequestEvMode');
@@ -82,9 +81,7 @@ export function createRequestEvent(
 
     while (routeModuleIndex < requestHandlers.length) {
       const moduleRequestHandler = requestHandlers[routeModuleIndex];
-      const result = qcAsyncRequestStore?.run
-        ? qcAsyncRequestStore.run(requestEv, moduleRequestHandler, requestEv)
-        : moduleRequestHandler(requestEv);
+      const result = moduleRequestHandler(requestEv);
       if (isPromise(result)) {
         await result;
       }
