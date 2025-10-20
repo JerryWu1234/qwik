@@ -1,6 +1,13 @@
-import { component$, Resource, getLocale } from "@qwik.dev/core";
+import {
+  component$,
+  Resource,
+  getLocale,
+  withLocale,
+  useSignal,
+  useVisibleTask$,
+} from "@qwik.dev/core";
 import type { RequestHandler } from "@qwik.dev/router";
-import { routeLoader$ } from "@qwik.dev/router";
+import { routeLoader$, server$ } from "@qwik.dev/router";
 
 // Simple in-memory barrier to coordinate two concurrent requests in tests.
 type Barrier = {
@@ -41,6 +48,12 @@ export const onRequest: RequestHandler = ({ url, locale }) => {
   }
 };
 
+export const getAsyncLocale = server$((locale: string) => {
+  return withLocale(locale, async () => {
+    await waitForBoth("locale-server", locale);
+    return getLocale();
+  });
+});
 export const useBarrier = routeLoader$(({ url }) => {
   const group = url.searchParams.get("group") || "default";
   const id = url.searchParams.get("id") || Math.random().toString(36).slice(2);
@@ -48,7 +61,11 @@ export const useBarrier = routeLoader$(({ url }) => {
 });
 
 export default component$(() => {
+  const serverLocale = useSignal("unknown");
   const barrier = useBarrier();
+  useVisibleTask$(async () => {
+    serverLocale.value = await getAsyncLocale(getLocale());
+  });
   return (
     <section>
       <p>
@@ -62,6 +79,9 @@ export default component$(() => {
           </p>
         )}
       />
+      <p>
+        Server locale: <span class="locale-server">{serverLocale.value}</span>
+      </p>
     </section>
   );
 });

@@ -17,6 +17,7 @@ import {
   RedirectMessage,
   RewriteMessage,
   ServerError,
+  _asyncRequestStore,
 } from '@qwik.dev/router/middleware/request-handler';
 import { qcAsyncRequestStore } from './async-hooks';
 

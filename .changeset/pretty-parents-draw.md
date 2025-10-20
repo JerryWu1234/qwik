@@ -3,4 +3,4 @@
 '@qwik.dev/core': patch
 ---
 
-enhance locale handling with AsyncLocalStorage support for server-side requests
+FEAT: `withLocale()` uses AsyncLocalStorage for server-side requests when available, allowing async operations to retain the correct locale context.

@@ -74,5 +74,9 @@ export function withLocale<T>(locale: string, fn: () => T): T {
  * @public
  */
 export function setLocale(locale: string): void {
+  if (localAsyncStore) {
+    localAsyncStore.enterWith(locale);
+    return;
+  }
   _locale = locale;
 }

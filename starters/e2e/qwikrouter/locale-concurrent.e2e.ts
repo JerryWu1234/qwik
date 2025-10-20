@@ -17,19 +17,17 @@ test.describe("Qwik Router concurrent locale", () => {
     const url2 =
       "/qwikrouter-test/locale-concurrent?group=g&id=two&locale=fr-FR";
 
-    // Start both navigations without waiting them to finish
+    // Visit both pages concurrently
     const nav1 = page1.goto(url1);
     const nav2 = page2.goto(url2);
-
     await Promise.all([nav1, nav2]);
 
-    // Before barrier render, locale is already set and visible in first block
     await expect(page1.locator(".locale-before")).toHaveText("en-US");
     await expect(page2.locator(".locale-before")).toHaveText("fr-FR");
-
-    // After barrier releases, the bottom content renders and must preserve each locale
     await expect(page1.locator(".locale")).toHaveText("en-US");
     await expect(page2.locator(".locale")).toHaveText("fr-FR");
+    await expect(page1.locator(".locale-server")).toHaveText("en-US");
+    await expect(page2.locator(".locale-server")).toHaveText("fr-FR");
 
     await ctx1.close();
     await ctx2.close();
