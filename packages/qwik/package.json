@@ -97,8 +97,7 @@
     },
     "./insights": {
       "types": "./dist/insights.d.ts",
-      "import": "./dist/insights/index.qwik.mjs",
-      "require": "./dist/insights/index.qwik.cjs"
+      "import": "./dist/insights/index.qwik.mjs"
     },
     "./insights/vite": {
       "types": "./dist/insights/vite.d.ts",
