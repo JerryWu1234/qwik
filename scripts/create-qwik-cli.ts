@@ -34,10 +34,10 @@ async function bundleCreateQwikCli(config: BuildConfig, srcCliDir: string, distC
 
   await build({
     entryPoints: [join(srcCliDir, 'index.ts')],
-    outfile: join(distCliDir, 'index.cjs'),
+    outfile: join(distCliDir, 'index.mjs'),
     target: nodeTarget,
     platform: 'node',
-    format: 'cjs',
+    format: 'esm',
     bundle: true,
     sourcemap: false,
     minify: !config.dev,

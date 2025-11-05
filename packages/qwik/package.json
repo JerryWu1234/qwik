@@ -48,11 +48,6 @@
         "production": "./dist/core.prod.mjs",
         "min": "./dist/core.min.mjs",
         "default": "./dist/core.prod.mjs"
-      },
-      "require": {
-        "development": "./dist/core.cjs",
-        "production": "./dist/core.prod.cjs",
-        "default": "./dist/core.prod.cjs"
       }
     },
     "./jsx-runtime": {
@@ -62,11 +57,6 @@
         "production": "./dist/core.prod.mjs",
         "min": "./dist/core.min.mjs",
         "default": "./dist/core.prod.mjs"
-      },
-      "require": {
-        "development": "./dist/core.cjs",
-        "production": "./dist/core.prod.cjs",
-        "default": "./dist/core.prod.cjs"
       }
     },
     "./jsx-dev-runtime": {
@@ -76,11 +66,6 @@
         "production": "./dist/core.prod.mjs",
         "min": "./dist/core.min.mjs",
         "default": "./dist/core.mjs"
-      },
-      "require": {
-        "development": "./dist/core.cjs",
-        "production": "./dist/core.prod.cjs",
-        "default": "./dist/core.cjs"
       }
     },
     "./build": {
