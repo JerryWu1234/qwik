@@ -221,8 +221,6 @@ class DomContainer extends _SharedContainer implements ClientContainer {
     // (undocumented)
     $getObjectById$: (id: number | string) => unknown;
     // (undocumented)
-    $initialQRLs$: Array<string> | null;
-    // (undocumented)
     $instanceHash$: string;
     // (undocumented)
     $journal$: VNodeJournal;
@@ -395,10 +393,8 @@ export const _IMMUTABLE: unique symbol;
 // @public
 export const implicit$FirstArg: <FIRST, REST extends any[], RET>(fn: (qrl: QRL<FIRST>, ...rest: REST) => RET) => ((qrl: FIRST, ...rest: REST) => RET);
 
-// Warning: (ae-internal-missing-underscore) The name "inlinedQrl" should be prefixed with an underscore because the declaration is marked as @internal
-//
-// @internal (undocumented)
-export const inlinedQrl: <T>(symbol: T, symbolName: string, lexicalScopeCapture?: any[]) => QRL<T>;
+// @public
+export const inlinedQrl: <T>(symbol: T | null, symbolName: string, lexicalScopeCapture?: any[]) => QRL<T>;
 
 // Warning: (ae-forgotten-export) The symbol "QRLDev" needs to be exported by the entry point index.d.ts
 // Warning: (ae-internal-missing-underscore) The name "inlinedQrlDEV" should be prefixed with an underscore because the declaration is marked as @internal
@@ -795,7 +791,7 @@ export interface ReadonlySignal<T = unknown> {
     readonly value: T;
 }
 
-// @internal (undocumented)
+// @internal
 export const _regSymbol: (symbol: any, hash: string) => any;
 
 // @public
