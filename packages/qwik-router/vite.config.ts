@@ -8,7 +8,7 @@ export default defineConfig(() => {
       emptyOutDir: false,
       ssr: true,
       modulePreload: false,
-      target: 'es2020',
+      target: 'esnext',
       outDir: 'lib',
       minify: false,
       rollupOptions: {

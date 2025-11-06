@@ -42,6 +42,21 @@ export async function submoduleBackpatch(config: BuildConfig) {
   await generateBackpatchSubmodule(config);
 }
 
+export async function inlineBackpatchScriptsEsBuild(config: BuildConfig) {
+  const define: { [varName: string]: string } = {};
+
+  define['globalThis.QWIK_BACKPATCH_EXECUTOR_MINIFIED'] = await getLoaderJsonString(
+    config,
+    'backpatch-executor.js'
+  );
+  define['globalThis.QWIK_BACKPATCH_EXECUTOR_DEBUG'] = await getLoaderJsonString(
+    config,
+    'backpatch-executor.debug.js'
+  );
+
+  return define;
+}
+
 export async function generateBackpatchSubmodule(config: BuildConfig) {
   const backpatchDistDir = join(config.distQwikPkgDir, 'backpatch');
 

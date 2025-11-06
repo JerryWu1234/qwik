@@ -73,7 +73,6 @@ export async function submoduleOptimizer(config: BuildConfig) {
     },
     define: {
       ...commonConfig.define,
-      'globalThis.IS_CJS': 'false',
       'globalThis.IS_ESM': 'true',
     },
   };

@@ -2,6 +2,7 @@ import { build, type BuildOptions, type Plugin } from 'esbuild';
 import { join } from 'node:path';
 import { readPackageJson } from './package-json';
 import { inlineQwikScriptsEsBuild } from './submodule-qwikloader';
+import { inlineBackpatchScriptsEsBuild } from './submodule-backpatch';
 import { type BuildConfig, getBanner, importPath, target } from './util';
 
 /**
@@ -74,7 +75,7 @@ export async function submoduleServer(config: BuildConfig) {
     ],
     define: {
       ...(await inlineQwikScriptsEsBuild(config)),
-      'globalThis.IS_CJS': 'false',
+      ...(await inlineBackpatchScriptsEsBuild(config)),
       'globalThis.IS_ESM': 'true',
       'globalThis.QWIK_VERSION': JSON.stringify(config.distVersion),
       'globalThis.QWIK_DOM_VERSION': JSON.stringify(qwikDomVersion),
