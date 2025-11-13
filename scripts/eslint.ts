@@ -16,8 +16,9 @@ export async function buildEslint(config: BuildConfig) {
     sourcemap: false,
     target: nodeTarget,
     platform: 'node',
+    format: 'esm',
     minify: !config.dev,
-    external: ['eslint', 'espree', '@typescript-eslint/utils', 'typescript'],
+    external: ['eslint', 'espree', '@typescript-eslint/utils', 'typescript', 'jsx-ast-utils'],
   });
 
   console.log(`📐 ${PACKAGE}`);

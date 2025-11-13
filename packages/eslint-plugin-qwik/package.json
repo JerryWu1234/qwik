@@ -27,6 +27,11 @@
     "eslint",
     "qwik"
   ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
   "license": "MIT",
   "main": "dist/index.js",
   "peerDependencies": {
@@ -39,5 +44,6 @@
   },
   "scripts": {
     "test": "cd ../..; ./node_modules/.bin/vitest packages/eslint-plugin-qwik/qwik.unit.ts"
-  }
+  },
+  "type": "module"
 }
