@@ -235,6 +235,7 @@ const IGNORE: { [path: string]: boolean } = {
   build: true,
   server: true,
   e2e: true,
+  'e2e-library': true,
   node_modules: true,
   'package-lock.json': true,
   'starter.tsconfig.json': true,
