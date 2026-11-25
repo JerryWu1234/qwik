@@ -21,6 +21,8 @@ export type DevtoolsTabId =
   | 'buildAnalysis'
   | 'insights';
 
+export type DevtoolsRuntimeMode = 'overlay' | 'vite-iframe' | 'browser-extension';
+
 export interface DevtoolsPanelBounds {
   x: number;
   y: number;
@@ -52,11 +54,11 @@ export interface DevtoolsState {
   clearPerformanceRequested: boolean;
   /** Whether the Vite devtools plugin overlay is also active on the page. */
   vitePluginDetected?: boolean;
-  /** True when running inside the browser extension panel (no Vite server). */
-  isExtension: boolean;
+  runtimeMode: DevtoolsRuntimeMode;
+  pagePathname: string | null;
 }
 
-export function createDevtoolsState(opts?: { isExtension?: boolean }): DevtoolsState {
+export function createDevtoolsState(opts?: { runtimeMode?: DevtoolsRuntimeMode }): DevtoolsState {
   return {
     isOpen: false,
     isPanelFullscreen: false,
@@ -79,6 +81,7 @@ export function createDevtoolsState(opts?: { isExtension?: boolean }): DevtoolsS
     isPaletteOpen: false,
     componentReveal: null,
     clearPerformanceRequested: false,
-    isExtension: opts?.isExtension ?? false,
+    runtimeMode: opts?.runtimeMode ?? 'overlay',
+    pagePathname: null,
   };
 }
